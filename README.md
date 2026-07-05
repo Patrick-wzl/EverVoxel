@@ -315,3 +315,126 @@ public class CameraFollow : MonoBehaviour
 把 `CameraFollow.cs` 拖到 `Main Camera` 上。
 
 把 Hierarchy 里的 `Player` 拖到 `CameraFollow` 的 `Target` 字段
+
+
+
+## 放置/摧毁方块
+
+鼠标左键摧毁，鼠标右键放置。范围是以角色为球心2个单元格半径
+
+
+
+在 `Assets/Scripts` 创建 `BlockInteraction.cs`
+
+```c#
+using UnityEngine;
+
+public class BlockInteraction : MonoBehaviour
+{
+    [Header("References")]
+    public Camera playerCamera;
+    public Transform worldRoot;
+
+    [Header("Placement")]
+    public Material placeMaterial;
+    public float interactRange = 2.5f;   // 修改方块距离限制
+
+    private void Awake()
+    {
+        if (playerCamera == null)
+        {
+            playerCamera = Camera.main;
+        }
+    }
+
+    private void Update()
+    {
+        if (Input.GetMouseButtonDown(0))
+        {
+            TryBreakBlock();
+        }
+
+        if (Input.GetMouseButtonDown(1))
+        {
+            TryPlaceBlock();
+        }
+    }
+
+    private bool TryGetTargetBlock(out RaycastHit hit)
+    {
+        hit = default;
+
+        Ray ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+
+        if (!Physics.Raycast(ray, out hit, 100f))
+        {
+            return false;
+        }
+
+        if (worldRoot != null && hit.collider.transform.parent != worldRoot)
+        {
+            return false;
+        }
+
+        float distanceToPlayer = Vector3.Distance(transform.position, hit.collider.transform.position);
+
+        if (distanceToPlayer > interactRange)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void TryBreakBlock()
+    {
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Destroy(hit.collider.gameObject);
+    }
+
+    private void TryPlaceBlock()
+    {
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Vector3 placePosition = hit.collider.transform.position + hit.normal;
+        placePosition = new Vector3(
+            Mathf.Round(placePosition.x),
+            Mathf.Round(placePosition.y),
+            Mathf.Round(placePosition.z)
+        );
+
+        if (Physics.CheckBox(placePosition, Vector3.one * 0.45f))
+        {
+            return;
+        }
+
+        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        block.transform.position = placePosition;
+
+        if (worldRoot != null)
+        {
+            block.transform.parent = worldRoot;
+        }
+
+        Renderer renderer = block.GetComponent<Renderer>();
+
+        if (placeMaterial != null)
+        {
+            renderer.material = placeMaterial;
+        }
+    }
+}
+```
+
+把它挂到 `Player`
+
+1. 把 `Main Camera` 拖到 `Player Camera`
+2. 把 `World` 拖到 `World Root`
+3. 把 `Grass.mat` 拖到 `Place Material`
