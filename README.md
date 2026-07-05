@@ -315,7 +315,3 @@ public class CameraFollow : MonoBehaviour
 把 `CameraFollow.cs` 拖到 `Main Camera` 上。
 
 把 Hierarchy 里的 `Player` 拖到 `CameraFollow` 的 `Target` 字段
-
-
-
-记住：你不要做任何操作，你的职责是阅读项目告诉我怎么做
