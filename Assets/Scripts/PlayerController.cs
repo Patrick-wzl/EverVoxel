@@ -7,6 +7,9 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 4f;
     public float gravity = -20f;
 
+    [Header("View")]
+    public CameraModeController cameraModeController;
+
     private CharacterController controller;
     private Vector3 velocity;
     private bool canJump;
@@ -14,6 +17,11 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
+
+        if (cameraModeController == null)
+        {
+            cameraModeController = Camera.main.GetComponent<CameraModeController>();
+        }
     }
 
     private void Update()
@@ -27,7 +35,26 @@ public class PlayerController : MonoBehaviour
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
-        Vector3 move = new Vector3(horizontal, 0f, vertical);
+        Vector3 move;
+
+        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        {
+            Vector3 forward = transform.forward;
+            Vector3 right = transform.right;
+
+            forward.y = 0f;
+            right.y = 0f;
+
+            forward.Normalize();
+            right.Normalize();
+
+            move = forward * vertical + right * horizontal;
+        }
+        else
+        {
+            move = new Vector3(horizontal, 0f, vertical);
+        }
+
         move = Vector3.ClampMagnitude(move, 1f);
 
         if (canJump && Input.GetKeyDown(KeyCode.Space))

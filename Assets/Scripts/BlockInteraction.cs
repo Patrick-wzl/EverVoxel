@@ -5,16 +5,22 @@ public class BlockInteraction : MonoBehaviour
     [Header("References")]
     public Camera playerCamera;
     public Transform worldRoot;
+    public CameraModeController cameraModeController;
 
     [Header("Placement")]
     public Material placeMaterial;
-    public float interactRange = 2.5f;   // 修改方块距离限制
+    public float interactRange = 5f;
 
     private void Awake()
     {
         if (playerCamera == null)
         {
             playerCamera = Camera.main;
+        }
+
+        if (cameraModeController == null && playerCamera != null)
+        {
+            cameraModeController = playerCamera.GetComponent<CameraModeController>();
         }
     }
 
@@ -35,7 +41,17 @@ public class BlockInteraction : MonoBehaviour
     {
         hit = default;
 
-        Ray ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+        Ray ray;
+
+        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        {
+            Vector3 screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
+            ray = playerCamera.ScreenPointToRay(screenCenter);
+        }
+        else
+        {
+            ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+        }
 
         if (!Physics.Raycast(ray, out hit, 100f))
         {

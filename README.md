@@ -268,7 +268,7 @@ public class PlayerController : MonoBehaviour
 
 
 
-## 摄像机
+## 第三人称【上帝视角】
 
 选中场景里的 `Main Camera`。设置初始位置：
 
@@ -438,3 +438,365 @@ public class BlockInteraction : MonoBehaviour
 1. 把 `Main Camera` 拖到 `Player Camera`
 2. 把 `World` 拖到 `World Root`
 3. 把 `Grass.mat` 拖到 `Place Material`
+
+
+
+## 第一人称
+
+按v切换视角
+
+
+
+在 `Assets/Scripts` 创建 `CameraModeController.cs`
+
+```c#
+using UnityEngine;
+
+public class CameraModeController : MonoBehaviour
+{
+    public enum ViewMode
+    {
+        TopDown,
+        FirstPerson
+    }
+
+    [Header("References")]
+    public Transform target;
+
+    [Header("Switch")]
+    public KeyCode switchKey = KeyCode.V;
+    public ViewMode currentMode = ViewMode.TopDown;
+
+    [Header("Top Down")]
+    public Vector3 topDownOffset = new Vector3(0f, 10f, -10f);
+    public float topDownSmoothSpeed = 8f;
+
+    [Header("First Person")]
+    public Vector3 firstPersonOffset = new Vector3(0f, 0.75f, 0f);
+    public float mouseSensitivity = 2.5f;
+    public float minPitch = -80f;
+    public float maxPitch = 80f;
+
+    private float yaw;
+    private float pitch;
+
+    public bool IsFirstPerson => currentMode == ViewMode.FirstPerson;
+
+    private void Start()
+    {
+        if (target != null)
+        {
+            yaw = target.eulerAngles.y;
+        }
+
+        ApplyCursorState();
+    }
+
+    private void Update()
+    {
+        if (Input.GetKeyDown(switchKey))
+        {
+            ToggleMode();
+        }
+
+        if (IsFirstPerson)
+        {
+            UpdateFirstPersonLook();
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        if (IsFirstPerson)
+        {
+            UpdateFirstPersonCamera();
+        }
+        else
+        {
+            UpdateTopDownCamera();
+        }
+    }
+
+    private void ToggleMode()
+    {
+        currentMode = IsFirstPerson ? ViewMode.TopDown : ViewMode.FirstPerson;
+
+        if (target != null)
+        {
+            yaw = target.eulerAngles.y;
+        }
+
+        pitch = 0f;
+        ApplyCursorState();
+    }
+
+    private void ApplyCursorState()
+    {
+        if (IsFirstPerson)
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+    }
+
+    private void UpdateFirstPersonLook()
+    {
+        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
+        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+
+        yaw += mouseX;
+        pitch -= mouseY;
+        pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+
+        target.rotation = Quaternion.Euler(0f, yaw, 0f);
+    }
+
+    private void UpdateFirstPersonCamera()
+    {
+        transform.position = target.position + target.TransformDirection(firstPersonOffset);
+        transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+    }
+
+    private void UpdateTopDownCamera()
+    {
+        Vector3 desiredPosition = target.position + topDownOffset;
+
+        transform.position = Vector3.Lerp(
+            transform.position,
+            desiredPosition,
+            topDownSmoothSpeed * Time.deltaTime
+        );
+
+        transform.LookAt(target.position + Vector3.up);
+    }
+}
+```
+
+选中 `Main Camera`，把原来的 `CameraFollow` 组件删除。添加 `CameraModeController`。把 `Player` 拖到 `Target`
+
+
+
+替换 `PlayerController.cs`
+
+```c#
+using UnityEngine;
+
+[RequireComponent(typeof(CharacterController))]
+public class PlayerController : MonoBehaviour
+{
+    public float moveSpeed = 6f;
+    public float jumpHeight = 4f;
+    public float gravity = -20f;
+
+    [Header("View")]
+    public CameraModeController cameraModeController;
+
+    private CharacterController controller;
+    private Vector3 velocity;
+    private bool canJump;
+
+    private void Awake()
+    {
+        controller = GetComponent<CharacterController>();
+
+        if (cameraModeController == null)
+        {
+            cameraModeController = Camera.main.GetComponent<CameraModeController>();
+        }
+    }
+
+    private void Update()
+    {
+        if (controller.isGrounded)
+        {
+            canJump = true;
+            velocity.y = -2f;
+        }
+
+        float horizontal = Input.GetAxis("Horizontal");
+        float vertical = Input.GetAxis("Vertical");
+
+        Vector3 move;
+
+        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        {
+            Vector3 forward = transform.forward;
+            Vector3 right = transform.right;
+
+            forward.y = 0f;
+            right.y = 0f;
+
+            forward.Normalize();
+            right.Normalize();
+
+            move = forward * vertical + right * horizontal;
+        }
+        else
+        {
+            move = new Vector3(horizontal, 0f, vertical);
+        }
+
+        move = Vector3.ClampMagnitude(move, 1f);
+
+        if (canJump && Input.GetKeyDown(KeyCode.Space))
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            canJump = false;
+        }
+
+        velocity.y += gravity * Time.deltaTime;
+
+        Vector3 finalMove = move * moveSpeed;
+        finalMove.y = velocity.y;
+
+        controller.Move(finalMove * Time.deltaTime);
+    }
+}
+```
+
+选中 `Player`，把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
+
+
+
+替换 `BlockInteraction.cs`
+
+```c#
+using UnityEngine;
+
+public class BlockInteraction : MonoBehaviour
+{
+    [Header("References")]
+    public Camera playerCamera;
+    public Transform worldRoot;
+    public CameraModeController cameraModeController;
+
+    [Header("Placement")]
+    public Material placeMaterial;
+    public float interactRange = 2.5f;
+
+    private void Awake()
+    {
+        if (playerCamera == null)
+        {
+            playerCamera = Camera.main;
+        }
+
+        if (cameraModeController == null && playerCamera != null)
+        {
+            cameraModeController = playerCamera.GetComponent<CameraModeController>();
+        }
+    }
+
+    private void Update()
+    {
+        if (Input.GetMouseButtonDown(0))
+        {
+            TryBreakBlock();
+        }
+
+        if (Input.GetMouseButtonDown(1))
+        {
+            TryPlaceBlock();
+        }
+    }
+
+    private bool TryGetTargetBlock(out RaycastHit hit)
+    {
+        hit = default;
+
+        Ray ray;
+
+        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        {
+            Vector3 screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
+            ray = playerCamera.ScreenPointToRay(screenCenter);
+        }
+        else
+        {
+            ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+        }
+
+        if (!Physics.Raycast(ray, out hit, 100f))
+        {
+            return false;
+        }
+
+        if (worldRoot != null && hit.collider.transform.parent != worldRoot)
+        {
+            return false;
+        }
+
+        float distanceToPlayer = Vector3.Distance(transform.position, hit.collider.transform.position);
+
+        if (distanceToPlayer > interactRange)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void TryBreakBlock()
+    {
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Destroy(hit.collider.gameObject);
+    }
+
+    private void TryPlaceBlock()
+    {
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Vector3 placePosition = hit.collider.transform.position + hit.normal;
+        placePosition = new Vector3(
+            Mathf.Round(placePosition.x),
+            Mathf.Round(placePosition.y),
+            Mathf.Round(placePosition.z)
+        );
+
+        if (Physics.CheckBox(placePosition, Vector3.one * 0.45f))
+        {
+            return;
+        }
+
+        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        block.transform.position = placePosition;
+
+        if (worldRoot != null)
+        {
+            block.transform.parent = worldRoot;
+        }
+
+        Renderer renderer = block.GetComponent<Renderer>();
+
+        if (placeMaterial != null)
+        {
+            renderer.material = placeMaterial;
+        }
+    }
+}
+```
+
+选中 `Player`，把 `Main Camera` 拖到 `BlockInteraction`  的 `Camera Mode Controller `字段
+
+
+
+## 第一人称的准星
+
+待实现
