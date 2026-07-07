@@ -1,7 +1,7 @@
 # 游戏背景
 这款游戏参考如下两个游戏：
-- 我的世界
-- 我的世界地下城
+- 我的世界：第一人称
+- 我的世界地下城：第三人称【上帝视角】
 
 游戏最终效果如下：
 - 像我的世界，是开放式的，所有地形都是方块
@@ -19,15 +19,11 @@
 
 https://unity.com/download，使用google账号登录。下载安装UnityHub，然后安装：Unity 6.3 LTS (6000.3.19f1)，勾选：
 
-```
-☑ Microsoft Visual Studio Community
-
-☑ Windows Build Support (IL2CPP)
-
-☑ Android Build Support
-    ☑ Android SDK & NDK Tools
-    ☑ OpenJDK
-```
+- Microsoft Visual Studio Community
+- Windows Build Support (IL2CPP)
+- Android Build Support
+  - Android SDK & NDK Tools
+  - OpenJDK
 
 新建项目：Universal 3D (URP)
 
@@ -49,44 +45,32 @@ Both
 
 
 
-# 路线
+# 开发路线
 
-```
-第一阶段（地基）
-    Unity基础
-    ↓
-    玩家移动
-    ↓
-    摄像机
-    ↓
-    方块世界
-    ↓
-    放置/破坏方块
+第一阶段（地基）：
 
-第二阶段（MC）
-    Chunk
-    无限地图
-    Perlin Noise
-    树
-    光照
-    保存地图
+- 简单地形：已实现
+- 人物移动：已实现
+- 视角切换：还差第一人称的准星
+- 背包/装备栏/物品掉落：待实现
 
-第三阶段（地下城）
-    怪物
-    AI
-    掉落
-    装备
-    技能
-    血条
+第二阶段（MC）：
 
-第四阶段（大型）
-    蓝图系统
-    地牢
-    Boss
-    联机
-```
+- 各种方块
+- 树/草
+- 简单生物
+- 僵尸
+- 无限地图
+- 模型设计
 
+第三阶段（地下城）：
 
+第四阶段（大型）：
+
+- 蓝图系统
+-  地牢
+- Boss
+- 联机
 
 # 已实现功能
 
@@ -213,7 +197,7 @@ Radius: 0.5
 
 Capsule 自带的 Capsule Collider 可以删掉，因为我们用 `Character Controller`
 
-在Assets/Scripts 创建 PlayerController.cs
+在Assets/Scripts 创建 `PlayerController.cs`
 
 ```c#
 using UnityEngine;
@@ -225,6 +209,9 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 4f;
     public float gravity = -20f;
 
+    [Header("View")]
+    public CameraModeController cameraModeController;
+
     private CharacterController controller;
     private Vector3 velocity;
     private bool canJump;
@@ -232,6 +219,11 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
+
+        if (cameraModeController == null)
+        {
+            cameraModeController = Camera.main.GetComponent<CameraModeController>();
+        }
     }
 
     private void Update()
@@ -245,7 +237,26 @@ public class PlayerController : MonoBehaviour
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
-        Vector3 move = new Vector3(horizontal, 0f, vertical);
+        Vector3 move;
+
+        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        {
+            Vector3 forward = transform.forward;
+            Vector3 right = transform.right;
+
+            forward.y = 0f;
+            right.y = 0f;
+
+            forward.Normalize();
+            right.Normalize();
+
+            move = forward * vertical + right * horizontal;
+        }
+        else
+        {
+            move = new Vector3(horizontal, 0f, vertical);
+        }
+
         move = Vector3.ClampMagnitude(move, 1f);
 
         if (canJump && Input.GetKeyDown(KeyCode.Space))
@@ -266,9 +277,15 @@ public class PlayerController : MonoBehaviour
 
 把 `PlayerController.cs` 拖到 `Player` 上
 
+选中 `Player`，把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
 
 
-## 第三人称【上帝视角】
+
+## 视角
+
+按v切换第三人称【上帝视角】视角、第一人称
+
+
 
 选中场景里的 `Main Camera`。设置初始位置：
 
@@ -281,169 +298,6 @@ Rotation X: 60
 Rotation Y: 0
 Rotation Z: 0
 ```
-
-Assets/Scripts 创建 CameraFollow.cs
-
-```c#
-using UnityEngine;
-
-public class CameraFollow : MonoBehaviour
-{
-    public Transform target;
-    public Vector3 offset = new Vector3(0f, 10f, -10f);
-    public float smoothSpeed = 8f;
-
-    private void LateUpdate()
-    {
-        if (target == null)
-        {
-            return;
-        }
-
-        Vector3 desiredPosition = target.position + offset;
-        transform.position = Vector3.Lerp(
-            transform.position,
-            desiredPosition,
-            smoothSpeed * Time.deltaTime
-        );
-
-        transform.LookAt(target.position + Vector3.up);
-    }
-}
-```
-
-把 `CameraFollow.cs` 拖到 `Main Camera` 上。
-
-把 Hierarchy 里的 `Player` 拖到 `CameraFollow` 的 `Target` 字段
-
-
-
-## 放置/摧毁方块
-
-鼠标左键摧毁，鼠标右键放置。范围是以角色为球心2个单元格半径
-
-
-
-在 `Assets/Scripts` 创建 `BlockInteraction.cs`
-
-```c#
-using UnityEngine;
-
-public class BlockInteraction : MonoBehaviour
-{
-    [Header("References")]
-    public Camera playerCamera;
-    public Transform worldRoot;
-
-    [Header("Placement")]
-    public Material placeMaterial;
-    public float interactRange = 2.5f;   // 修改方块距离限制
-
-    private void Awake()
-    {
-        if (playerCamera == null)
-        {
-            playerCamera = Camera.main;
-        }
-    }
-
-    private void Update()
-    {
-        if (Input.GetMouseButtonDown(0))
-        {
-            TryBreakBlock();
-        }
-
-        if (Input.GetMouseButtonDown(1))
-        {
-            TryPlaceBlock();
-        }
-    }
-
-    private bool TryGetTargetBlock(out RaycastHit hit)
-    {
-        hit = default;
-
-        Ray ray = playerCamera.ScreenPointToRay(Input.mousePosition);
-
-        if (!Physics.Raycast(ray, out hit, 100f))
-        {
-            return false;
-        }
-
-        if (worldRoot != null && hit.collider.transform.parent != worldRoot)
-        {
-            return false;
-        }
-
-        float distanceToPlayer = Vector3.Distance(transform.position, hit.collider.transform.position);
-
-        if (distanceToPlayer > interactRange)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private void TryBreakBlock()
-    {
-        if (!TryGetTargetBlock(out RaycastHit hit))
-        {
-            return;
-        }
-
-        Destroy(hit.collider.gameObject);
-    }
-
-    private void TryPlaceBlock()
-    {
-        if (!TryGetTargetBlock(out RaycastHit hit))
-        {
-            return;
-        }
-
-        Vector3 placePosition = hit.collider.transform.position + hit.normal;
-        placePosition = new Vector3(
-            Mathf.Round(placePosition.x),
-            Mathf.Round(placePosition.y),
-            Mathf.Round(placePosition.z)
-        );
-
-        if (Physics.CheckBox(placePosition, Vector3.one * 0.45f))
-        {
-            return;
-        }
-
-        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        block.transform.position = placePosition;
-
-        if (worldRoot != null)
-        {
-            block.transform.parent = worldRoot;
-        }
-
-        Renderer renderer = block.GetComponent<Renderer>();
-
-        if (placeMaterial != null)
-        {
-            renderer.material = placeMaterial;
-        }
-    }
-}
-```
-
-把它挂到 `Player`
-
-1. 把 `Main Camera` 拖到 `Player Camera`
-2. 把 `World` 拖到 `World Root`
-3. 把 `Grass.mat` 拖到 `Place Material`
-
-
-
-## 第一人称
-
-按v切换视角
 
 
 
@@ -582,93 +436,17 @@ public class CameraModeController : MonoBehaviour
 }
 ```
 
-选中 `Main Camera`，把原来的 `CameraFollow` 组件删除。添加 `CameraModeController`。把 `Player` 拖到 `Target`
+选中 `Main Camera`，添加 `CameraModeController`。把 Hierarchy 里的 `Player` 拖到 `Target`字段
 
 
 
-替换 `PlayerController.cs`
+## 放置/摧毁方块
 
-```c#
-using UnityEngine;
-
-[RequireComponent(typeof(CharacterController))]
-public class PlayerController : MonoBehaviour
-{
-    public float moveSpeed = 6f;
-    public float jumpHeight = 4f;
-    public float gravity = -20f;
-
-    [Header("View")]
-    public CameraModeController cameraModeController;
-
-    private CharacterController controller;
-    private Vector3 velocity;
-    private bool canJump;
-
-    private void Awake()
-    {
-        controller = GetComponent<CharacterController>();
-
-        if (cameraModeController == null)
-        {
-            cameraModeController = Camera.main.GetComponent<CameraModeController>();
-        }
-    }
-
-    private void Update()
-    {
-        if (controller.isGrounded)
-        {
-            canJump = true;
-            velocity.y = -2f;
-        }
-
-        float horizontal = Input.GetAxis("Horizontal");
-        float vertical = Input.GetAxis("Vertical");
-
-        Vector3 move;
-
-        if (cameraModeController != null && cameraModeController.IsFirstPerson)
-        {
-            Vector3 forward = transform.forward;
-            Vector3 right = transform.right;
-
-            forward.y = 0f;
-            right.y = 0f;
-
-            forward.Normalize();
-            right.Normalize();
-
-            move = forward * vertical + right * horizontal;
-        }
-        else
-        {
-            move = new Vector3(horizontal, 0f, vertical);
-        }
-
-        move = Vector3.ClampMagnitude(move, 1f);
-
-        if (canJump && Input.GetKeyDown(KeyCode.Space))
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            canJump = false;
-        }
-
-        velocity.y += gravity * Time.deltaTime;
-
-        Vector3 finalMove = move * moveSpeed;
-        finalMove.y = velocity.y;
-
-        controller.Move(finalMove * Time.deltaTime);
-    }
-}
-```
-
-选中 `Player`，把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
+鼠标左键摧毁，鼠标右键放置。范围是以角色为球心2个单元格半径
 
 
 
-替换 `BlockInteraction.cs`
+在 `Assets/Scripts` 创建 `BlockInteraction.cs`
 
 ```c#
 using UnityEngine;
@@ -793,7 +571,12 @@ public class BlockInteraction : MonoBehaviour
 }
 ```
 
-选中 `Player`，把 `Main Camera` 拖到 `BlockInteraction`  的 `Camera Mode Controller `字段
+把它挂到 `Player`
+
+1. 把 `Main Camera` 拖到 `Player Camera`
+2. 把 `World` 拖到 `World Root`
+3. 把 `Grass.mat` 拖到 `Place Material`
+4. 把 `Main Camera` 拖到 `BlockInteraction`  的 `Camera Mode Controller `字段
 
 
 
