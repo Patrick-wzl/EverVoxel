@@ -3,9 +3,9 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
-    public float moveSpeed = 6f;
-    public float jumpHeight = 4f;
-    public float gravity = -20f;
+    public float moveSpeed = 4f;
+    public float jumpHeight = 2f;
+    public float gravity = -9.8;   // 重力加速度，负数表示向下
 
     [Header("View")]
     public CameraModeController cameraModeController;

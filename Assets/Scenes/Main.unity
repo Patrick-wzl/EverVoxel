@@ -438,9 +438,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 24881ca7b1f8b7c4498b7af62b1018fe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  moveSpeed: 6
-  jumpHeight: 4
-  gravity: -20
+  moveSpeed: 4
+  jumpHeight: 2
+  gravity: -10
   cameraModeController: {fileID: 330585548}
 --- !u!143 &564285871
 CharacterController:

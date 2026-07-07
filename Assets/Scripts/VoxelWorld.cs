@@ -3,12 +3,12 @@ using UnityEngine;
 public class VoxelWorld : MonoBehaviour
 {
     [Header("World Size")]
-    public int width = 32;
-    public int depth = 32;
-    public int maxHeight = 6;
+    public int width = 32;   // x轴：32方块
+    public int depth = 32;   // z轴：32方块
+    public int maxHeight = 6;   // y轴：最大高度6方块
 
     [Header("Noise")]
-    public float noiseScale = 12f;
+    public float noiseScale = 12f;   // 决定地形起伏
 
     [Header("Materials")]
     public Material grassMaterial;

@@ -205,9 +205,9 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
-    public float moveSpeed = 6f;
-    public float jumpHeight = 4f;
-    public float gravity = -20f;
+    public float moveSpeed = 4f;
+    public float jumpHeight = 2f;
+    public float gravity = -9.8f;
 
     [Header("View")]
     public CameraModeController cameraModeController;
@@ -275,9 +275,11 @@ public class PlayerController : MonoBehaviour
 }
 ```
 
-把 `PlayerController.cs` 拖到 `Player` 上
+选中 `Player`
 
-选中 `Player`，把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
+1. 把 `PlayerController.cs` 拖到 `Player` 上
+2. 把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
+
 
 
 
@@ -436,7 +438,10 @@ public class CameraModeController : MonoBehaviour
 }
 ```
 
-选中 `Main Camera`，添加 `CameraModeController`。把 Hierarchy 里的 `Player` 拖到 `Target`字段
+选中 `Main Camera`
+
+1. 把 `CameraModeController.cs` 拖到 `Main Camera` 上
+2. 把 Hierarchy 里的 `Player` 拖到 `Target`字段
 
 
 
