@@ -581,10 +581,10 @@ public class BlockInteraction : MonoBehaviour
 
 把它挂到 `Player`
 
-1. 把 `Main Camera` 拖到 `Player Camera`
-2. 把 `World` 拖到 `World Root`
-3. 把 `Grass.mat` 拖到 `Place Material`
-4. 把 `Main Camera` 拖到 `BlockInteraction`  的 `Camera Mode Controller `字段
+1. 把 `Main Camera` 拖到 `Player Camera`字段
+2. 把 `World` 拖到 `World Root`字段
+3. 把 `Grass.mat` 拖到 `Place Material`字段
+4. 把 `Main Camera` 拖到  `Camera Mode Controller `字段
 
 
 
