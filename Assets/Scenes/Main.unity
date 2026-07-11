@@ -266,12 +266,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 330585543}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f87e33189829bb84dba88b8ea43aaa8c, type: 3}
+  m_Script: {fileID: 11500000, guid: 8f1f98c762e28ff4a848a6f4f33974c7, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CameraFollow
+  m_EditorClassIdentifier: Assembly-CSharp::CameraModeController
   target: {fileID: 564285874}
-  offset: {x: 0, y: 10, z: -10}
-  smoothSpeed: 8
+  switchKey: 118
+  currentMode: 0
+  topDownOffset: {x: 0, y: 10, z: -10}
+  topDownSmoothSpeed: 8
+  firstPersonOffset: {x: 0, y: 0.75, z: 0}
+  mouseSensitivity: 2.5
+  minPitch: -80
+  maxPitch: 80
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -432,9 +438,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 24881ca7b1f8b7c4498b7af62b1018fe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  moveSpeed: 6
-  jumpHeight: 4
-  gravity: -20
+  moveSpeed: 4
+  jumpHeight: 2
+  gravity: -10
+  cameraModeController: {fileID: 330585548}
 --- !u!143 &564285871
 CharacterController:
   m_ObjectHideFlags: 0
@@ -546,6 +553,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BlockInteraction
   playerCamera: {fileID: 330585545}
   worldRoot: {fileID: 1041401693}
+  cameraModeController: {fileID: 330585548}
   placeMaterial: {fileID: 2100000, guid: 549e4701153ce8b40b3eb2b8878bc11e, type: 2}
   interactRange: 5
 --- !u!1 &832575517
