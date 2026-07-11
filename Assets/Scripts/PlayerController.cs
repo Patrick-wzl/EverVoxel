@@ -5,7 +5,7 @@ public class PlayerController : MonoBehaviour
 {
     public float moveSpeed = 4f;
     public float jumpHeight = 2f;
-    public float gravity = -9.8;   // 重力加速度，负数表示向下
+    public float gravity = -9.8f;   // 重力加速度，负数表示向下
 
     [Header("View")]
     public CameraModeController cameraModeController;
