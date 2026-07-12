@@ -620,6 +620,108 @@ public class BlockInteraction : MonoBehaviour
 
 
 
+# 当前需求
+
 ## 第一人称的准星
 
-待实现
+在Hierarchy空白处右键 -> 选择UI(Canvas) -> 选择Canvas
+
+Hierarchy中会变成：
+
+- Canvas
+- EventSystem（自动生成的，不能删）
+
+
+
+选中Hierarchy中创建的Canvas，Inspector里面找到Canvas组件。检查如下选项，保证为：
+
+- Render Mode选项：选择Screen Space - Overlay
+
+Inspector里面找到Canvas Scaler组件。检查如下选项，保证为：
+
+- UI Scale Mode选项：选择Scale With Screen Size
+- Reference Resolution选项：x 1920   y 1080
+- Screen Match Mode选项：选择Match Width Or Height
+- Match选项：选择0.5
+
+
+
+右键Hierarchy中创建的Canvas -> 选择UI(Canvas) -> 选择Image，重命名为Crosshair
+
+最终Hierarchy应该变成：
+
+- Canvas
+  - Crosshair
+- EventSystem
+
+
+
+选中Hierarchy中Canvas下的Crosshair，Inspector里面找到Rect Transform组件：
+
+- Anchor Presets选项【位于左上方的方块】：选择Middle Center
+- width、height：100 100
+
+
+
+Assets目录下新建Sprites目录，Sprites目录导进去Crosshair.png
+
+<img src="README.assets/Crosshair.png" style="zoom: 25%;" />
+
+选中Crosshair.png，Inspector里面，找到Texture Type选项，选择Sprite (2D and UI)
+
+找到Sprite Mode选项，选择Single，然后点击Apply。
+
+
+
+然后引用图片：点击Hierarchy中Canvas下的Crosshair，Inspector里面找到Image组件：
+
+Source Image选项：把Crosshair.png拖进去
+
+Image Type选项：Simple
+
+Image Type选项下的Preserve Aspect：勾选
+
+
+
+修改 CameraModeController.cs
+
+```c#
+[Header("First Person")]
+public Vector3 firstPersonOffset = new Vector3(0f, 0.75f, 0f);
+
+// ===============以下是新增代码=================
+[Header("UI")]
+public GameObject crosshair;
+// ===============以上是新增代码=================
+
+public float mouseSensitivity = 2.5f;
+```
+
+```c#
+private void ApplyCursorState()
+{
+    if (IsFirstPerson)
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
+        if (crosshair != null)
+        {
+            crosshair.SetActive(true);
+        }
+    }
+    else
+    {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        if (crosshair != null)
+        {
+            crosshair.SetActive(false);
+        }
+    }
+}
+```
+
+选中Hierarchy中Main Camera，Inspector里面Camera Mode Controller组件会多出来Crosshair，把Hierarchy里面Canvas下的Crosshair拖进去
+

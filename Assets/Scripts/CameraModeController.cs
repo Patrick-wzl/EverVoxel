@@ -21,6 +21,9 @@ public class CameraModeController : MonoBehaviour
 
     [Header("First Person")]
     public Vector3 firstPersonOffset = new Vector3(0f, 0.75f, 0f);
+
+    [Header("UI")]
+    public GameObject crosshair;
     public float mouseSensitivity = 2.5f;   // 鼠标灵敏度
     public float minPitch = -80f;   // 第一人称允许向上下看的最大角度
     public float maxPitch = 80f;
@@ -98,11 +101,21 @@ public class CameraModeController : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             // 第一人称隐藏鼠标
             Cursor.visible = false;
+
+            if (crosshair != null)
+            {
+                crosshair.SetActive(true);
+            }
         }
         else
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+
+            if (crosshair != null)
+            {
+                crosshair.SetActive(false);
+            }
         }
     }
 
