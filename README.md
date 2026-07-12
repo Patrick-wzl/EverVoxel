@@ -51,7 +51,7 @@ Both
 
 - 简单地形：已实现
 - 人物移动：已实现
-- 视角切换：还差第一人称的准星
+- 视角切换：已实现
 - 背包/装备栏/物品掉落：待实现
 
 第二阶段（MC）：
@@ -620,8 +620,6 @@ public class BlockInteraction : MonoBehaviour
 
 
 
-# 当前需求
-
 ## 第一人称的准星
 
 在Hierarchy空白处右键 -> 选择UI(Canvas) -> 选择Canvas
@@ -635,11 +633,11 @@ Hierarchy中会变成：
 
 选中Hierarchy中创建的Canvas，Inspector里面找到Canvas组件。检查如下选项，保证为：
 
-- Render Mode选项：选择Screen Space - Overlay
+- Render Mode选项：选择Screen Space - Overlay【含义：UI画在整个游戏画面的最上层】
 
 Inspector里面找到Canvas Scaler组件。检查如下选项，保证为：
 
-- UI Scale Mode选项：选择Scale With Screen Size
+- UI Scale Mode选项：选择Scale With Screen Size【含义：自动按屏幕大小缩放UI】
 - Reference Resolution选项：x 1920   y 1080
 - Screen Match Mode选项：选择Match Width Or Height
 - Match选项：选择0.5
@@ -653,8 +651,6 @@ Inspector里面找到Canvas Scaler组件。检查如下选项，保证为：
 - Canvas
   - Crosshair
 - EventSystem
-
-
 
 选中Hierarchy中Canvas下的Crosshair，Inspector里面找到Rect Transform组件：
 
@@ -698,6 +694,7 @@ public float mouseSensitivity = 2.5f;
 ```
 
 ```c#
+
 private void ApplyCursorState()
 {
     if (IsFirstPerson)
@@ -705,23 +702,36 @@ private void ApplyCursorState()
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
+        // ===============以下是新增代码=================
         if (crosshair != null)
         {
             crosshair.SetActive(true);
         }
+        // ===============以上是新增代码=================
     }
     else
     {
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 
+        // ===============以下是新增代码=================
         if (crosshair != null)
         {
             crosshair.SetActive(false);
         }
+        // ===============以上是新增代码=================
     }
 }
 ```
 
 选中Hierarchy中Main Camera，Inspector里面Camera Mode Controller组件会多出来Crosshair，把Hierarchy里面Canvas下的Crosshair拖进去
 
+
+
+# 当前需求
+
+## 真正的多种类方块
+
+当前仅仅是一种方块，然后引用不同材质，通过算法实现地形
+
+为了防止将来返工，这里要规范成真正的实现多种方块的做法
