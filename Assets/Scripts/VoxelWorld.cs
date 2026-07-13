@@ -3,17 +3,18 @@ using UnityEngine;
 public class VoxelWorld : MonoBehaviour
 {
     [Header("World Size")]
-    public int width = 32;   // x轴：32方块
-    public int depth = 32;   // z轴：32方块
-    public int maxHeight = 6;   // y轴：最大高度6方块
+    public int width = 32;
+    public int depth = 32;
+    public int maxHeight = 6;
 
     [Header("Noise")]
-    public float noiseScale = 12f;   // 决定地形起伏
+    public float noiseScale = 12f;
 
-    [Header("Materials")]
-    public Material grassMaterial;
-    public Material dirtMaterial;
-    public Material stoneMaterial;
+    [Header("Block Types")]
+    // 不再直接引用材质，而是引用真正的方块定义
+    public BlockDefinition grassBlock;
+    public BlockDefinition dirtBlock;
+    public BlockDefinition stoneBlock;
 
     private void Start()
     {
@@ -31,31 +32,60 @@ public class VoxelWorld : MonoBehaviour
 
                 for (int y = 0; y < height; y++)
                 {
-                    CreateBlock(x, y, z, height);
+                    CreateTerrainBlock(x, y, z, height);
                 }
             }
         }
     }
 
-    private void CreateBlock(int x, int y, int z, int columnHeight)
+    // 根据方块所在高度，决定它应该是什么种类
+    private void CreateTerrainBlock(int x, int y, int z, int columnHeight)
     {
-        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        block.transform.position = new Vector3(x, y, z);
-        block.transform.parent = transform;
+        BlockDefinition blockToCreate;
 
-        Renderer renderer = block.GetComponent<Renderer>();
-
+        // 最顶部生成草方块
         if (y == columnHeight - 1)
         {
-            renderer.material = grassMaterial;
+            blockToCreate = grassBlock;
         }
+        // 草方块下方两层生成泥土
         else if (y >= columnHeight - 3)
         {
-            renderer.material = dirtMaterial;
+            blockToCreate = dirtBlock;
         }
+        // 更深处生成石头
         else
         {
-            renderer.material = stoneMaterial;
+            blockToCreate = stoneBlock;
         }
+
+        CreateBlock(new Vector3Int(x, y, z), blockToCreate);
+    }
+
+    // 创建一个真正具有方块定义的方块
+    public GameObject CreateBlock(Vector3Int blockPosition, BlockDefinition blockDefinition)
+    {
+        // 没有方块资料时不生成，避免产生没有类型的 Cube
+        if (blockDefinition == null)
+        {
+            return null;
+        }
+
+        // 创建 Unity Cube，Cube 自带 Mesh Renderer 和 Box Collider
+        GameObject blockObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+
+        // Vector3Int 保证方块始终对齐整数网格
+        blockObject.transform.position = blockPosition;
+
+        // 所有方块都放到 World 下
+        blockObject.transform.parent = transform;
+
+        // 为该 Cube 添加 Block 组件，保存它的真实类型
+        Block block = blockObject.AddComponent<Block>();
+
+        // 把草、泥土、石头等定义写入这个方块
+        block.Initialize(blockDefinition);
+
+        return blockObject;
     }
 }

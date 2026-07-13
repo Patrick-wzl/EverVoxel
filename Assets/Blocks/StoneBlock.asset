@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 546f2b57711eefa4ca464dde12e380c6, type: 3}
+  m_Name: StoneBlock
+  m_EditorClassIdentifier: Assembly-CSharp::BlockDefinition
+  displayName: "\u77F3\u5934"
+  material: {fileID: 2100000, guid: 179a895a291e9584bb0ba30353acfe45, type: 2}
+  isSolid: 1
+  isBreakable: 1
+  hardness: 3

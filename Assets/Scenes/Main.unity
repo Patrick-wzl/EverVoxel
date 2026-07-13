@@ -555,7 +555,7 @@ MonoBehaviour:
   playerCamera: {fileID: 330585545}
   worldRoot: {fileID: 1041401693}
   cameraModeController: {fileID: 330585548}
-  placeMaterial: {fileID: 2100000, guid: 549e4701153ce8b40b3eb2b8878bc11e, type: 2}
+  placeBlock: {fileID: 11400000, guid: f2a3843014f98664483d922c61274423, type: 2}
   interactRange: 5
 --- !u!1 &832575517
 GameObject:
@@ -639,9 +639,9 @@ MonoBehaviour:
   depth: 32
   maxHeight: 6
   noiseScale: 12
-  grassMaterial: {fileID: 2100000, guid: 549e4701153ce8b40b3eb2b8878bc11e, type: 2}
-  dirtMaterial: {fileID: 2100000, guid: 81ef430270183aa439ba8f6389a2bca0, type: 2}
-  stoneMaterial: {fileID: 2100000, guid: 179a895a291e9584bb0ba30353acfe45, type: 2}
+  grassBlock: {fileID: 11400000, guid: f2a3843014f98664483d922c61274423, type: 2}
+  dirtBlock: {fileID: 11400000, guid: b03c896bea7bdcf4eaaf2e60d49a4f41, type: 2}
+  stoneBlock: {fileID: 11400000, guid: c68e07c29e806e943a203463edf2633d, type: 2}
 --- !u!4 &1041401693
 Transform:
   m_ObjectHideFlags: 0
