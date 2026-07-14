@@ -8,9 +8,8 @@ public class BlockInteraction : MonoBehaviour
     public CameraModeController cameraModeController;
 
     [Header("Placement")]
-    public BlockDefinition placeBlock;
-
-    public float interactRange = 5f;
+    public BlockDefinition placeBlock;   // 放置的方块
+    public float interactRange = 5f;   // 放置的范围
 
     private VoxelWorld voxelWorld;
 
@@ -71,6 +70,7 @@ public class BlockInteraction : MonoBehaviour
             ray = playerCamera.ScreenPointToRay(Input.mousePosition);
         }
 
+        // 射线没有击中任何物体
         if (!Physics.Raycast(ray, out hit, 100f))
         {
             return false;
