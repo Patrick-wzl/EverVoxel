@@ -53,17 +53,30 @@ Both
 - 人物移动：已实现
 - 视角切换：已实现
 - 背包/装备栏/物品掉落：待实现
+- 方块血条
+- 人物血条
+- 第三人称视角：待讨论，待整改
 
 第二阶段（MC）：
 
+- 天气
+- 日夜交替
 - 各种方块
 - 树/草
 - 简单生物
 - 僵尸
 - 无限地图
 - 模型设计
+- 美术
+- 存档
 
 第三阶段（地下城）：
+
+- 各种地对生物
+- 各种地形
+- 各种事件【血月，火星人入侵】
+- 少量剧情
+- npc
 
 第四阶段（大型）：
 
@@ -71,12 +84,13 @@ Both
 -  地牢
 - Boss
 - 联机
+- 手机适配
 
 # 已实现功能
 
 角色在一片方块地形，wsad上下左右移动，空格跳跃，按v切换视角，放置破坏方块
 
-## 地形
+## 方块
 
 Assets/Materials 创建 3 个材质：右键 -> Create > Material
 
@@ -85,6 +99,108 @@ Grass.mat   绿色
 Dirt.mat   棕色
 Stone.mat   灰色
 ```
+
+
+
+在 `Assets/Scripts` 创建 `BlockDefinition.cs`：
+
+```c#
+using UnityEngine;
+
+// CreateAssetMenu：可以在 Project 面板右键创建不同种类的方块资源
+[CreateAssetMenu(fileName = "New Block", menuName = "EverVoxel/Block Definition")]
+public class BlockDefinition : ScriptableObject
+{
+    [Header("Basic Info")]
+    public string displayName = "新方块";
+
+    [Header("Appearance")]
+    // 该方块使用的材质
+    public Material material;
+
+    [Header("Gameplay")]
+    // 是否有实体碰撞，例如空气、水未来可以设为 false
+    public bool isSolid = true;
+
+    // 是否允许被破坏
+    public bool isBreakable = true;
+
+    // 破坏硬度。未来可配合镐子、斧头和挖掘时间使用
+    public float hardness = 1f;
+}
+```
+
+
+
+在 `Assets` 下新建一个目录`Blocks`
+
+然后在 `Blocks` 目录空白处右键：Create -> EverVoxel -> Block Definition
+
+创建三个资源并命名：GrassBlock、DirtBlock、StoneBlock。依次选中它们，在 Inspector 设置：
+
+| 方块资源   | Display Name | Material  | Hardness |
+| ---------- | ------------ | --------- | -------- |
+| GrassBlock | 草方块       | Grass.mat | 1        |
+| DirtBlock  | 泥土         | Dirt.mat  | 0.8      |
+| StoneBlock | 石头         | Stone.mat | 3        |
+
+`Is Solid` 与 `Is Breakable` 都保持勾选
+
+
+
+ `Assets/Scripts` 新建`Block.cs`：
+
+```c#
+using UnityEngine;
+
+// 每一个实际生成到场景里的方块，都会挂上这个组件
+public class Block : MonoBehaviour
+{
+    [Header("Block Data")]
+    [SerializeField] private BlockDefinition definition;
+
+    public BlockDefinition Definition => definition;
+
+    // 初始化方块
+    public void Initialize(BlockDefinition blockDefinition)
+    {
+        definition = blockDefinition;
+        ApplyDefinition();
+    }
+
+    // 根据方块资料，应用材质与碰撞体设置
+    private void ApplyDefinition()
+    {
+        if (definition == null)
+        {
+            return;
+        }
+
+        // 设置方块材质
+        Renderer blockRenderer = GetComponent<Renderer>();
+
+        if (blockRenderer != null && definition.material != null)
+        {
+            blockRenderer.material = definition.material;
+        }
+
+        // 根据方块资料决定是否启用碰撞体
+        Collider blockCollider = GetComponent<Collider>();
+
+        if (blockCollider != null)
+        {
+            blockCollider.enabled = definition.isSolid;
+        }
+
+        // 场景中显示的物体名称更清楚，例如：GrassBlock (草方块)
+        gameObject.name = $"{definition.name} ({definition.displayName})";
+    }
+}
+```
+
+
+
+## 地形
 
 Assets/Scripts 创建 VoxelWorld.cs
 
@@ -101,10 +217,11 @@ public class VoxelWorld : MonoBehaviour
     [Header("Noise")]
     public float noiseScale = 12f;
 
-    [Header("Materials")]
-    public Material grassMaterial;
-    public Material dirtMaterial;
-    public Material stoneMaterial;
+    [Header("Block Types")]
+    // 不再直接引用材质，而是引用真正的方块定义
+    public BlockDefinition grassBlock;
+    public BlockDefinition dirtBlock;
+    public BlockDefinition stoneBlock;
 
     private void Start()
     {
@@ -122,32 +239,61 @@ public class VoxelWorld : MonoBehaviour
 
                 for (int y = 0; y < height; y++)
                 {
-                    CreateBlock(x, y, z, height);
+                    CreateTerrainBlock(x, y, z, height);
                 }
             }
         }
     }
 
-    private void CreateBlock(int x, int y, int z, int columnHeight)
+    // 根据方块所在高度，决定它应该是什么种类
+    private void CreateTerrainBlock(int x, int y, int z, int columnHeight)
     {
-        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        block.transform.position = new Vector3(x, y, z);
-        block.transform.parent = transform;
+        BlockDefinition blockToCreate;
 
-        Renderer renderer = block.GetComponent<Renderer>();
-
+        // 最顶部生成草方块
         if (y == columnHeight - 1)
         {
-            renderer.material = grassMaterial;
+            blockToCreate = grassBlock;
         }
+        // 草方块下方两层生成泥土
         else if (y >= columnHeight - 3)
         {
-            renderer.material = dirtMaterial;
+            blockToCreate = dirtBlock;
         }
+        // 更深处生成石头
         else
         {
-            renderer.material = stoneMaterial;
+            blockToCreate = stoneBlock;
         }
+
+        CreateBlock(new Vector3Int(x, y, z), blockToCreate);
+    }
+
+    // 创建一个真正具有方块定义的方块
+    public GameObject CreateBlock(Vector3Int blockPosition, BlockDefinition blockDefinition)
+    {
+        // 没有方块资料时不生成，避免产生没有类型的 Cube
+        if (blockDefinition == null)
+        {
+            return null;
+        }
+
+        // 创建 Unity Cube，Cube 自带 Mesh Renderer 和 Box Collider
+        GameObject blockObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+
+        // Vector3Int 保证方块始终对齐整数网格
+        blockObject.transform.position = blockPosition;
+
+        // 所有方块都放到 World 下
+        blockObject.transform.parent = transform;
+
+        // 为该 Cube 添加 Block 组件，保存它的真实类型
+        Block block = blockObject.AddComponent<Block>();
+
+        // 把草、泥土、石头等定义写入这个方块
+        block.Initialize(blockDefinition);
+
+        return blockObject;
     }
 }
 ```
@@ -156,12 +302,12 @@ public class VoxelWorld : MonoBehaviour
 
 把 `VoxelWorld.cs` 拖到 `World` 上
 
-把 3 个材质拖到脚本对应位置
+把 3 种方块拖到`VoxelWorld`组件对应位置
 
 ```
-Grass Material
-Dirt Material
-Stone Material
+GrassBlock  -> Grass Block
+DirtBlock   -> Dirt Block
+StoneBlock  -> Stone Block
 ```
 
 
@@ -485,8 +631,10 @@ public class BlockInteraction : MonoBehaviour
     public CameraModeController cameraModeController;
 
     [Header("Placement")]
-    public Material placeMaterial;   // 放置的方块的材质
+    public BlockDefinition placeBlock;   // 放置的方块
     public float interactRange = 5f;   // 放置的范围
+
+    private VoxelWorld voxelWorld;
 
     private void Awake()
     {
@@ -499,16 +647,23 @@ public class BlockInteraction : MonoBehaviour
         {
             cameraModeController = playerCamera.GetComponent<CameraModeController>();
         }
+
+        // 从 World 物体获取 VoxelWorld，用它统一创建方块
+        if (worldRoot != null)
+        {
+            voxelWorld = worldRoot.GetComponent<VoxelWorld>();
+        }
     }
 
     private void Update()
     {
-        // 鼠标左键破坏，右键放置
+        // 鼠标左键破坏方块
         if (Input.GetMouseButtonDown(0))
         {
             TryBreakBlock();
         }
 
+        // 鼠标右键放置方块
         if (Input.GetMouseButtonDown(1))
         {
             TryPlaceBlock();
@@ -521,14 +676,20 @@ public class BlockInteraction : MonoBehaviour
 
         Ray ray;
 
-        // 第一人称屏幕中心发射射线
+        // 第一人称：从屏幕中心，也就是准星位置发射射线
         if (cameraModeController != null && cameraModeController.IsFirstPerson)
         {
-            Vector3 screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
+            Vector3 screenCenter = new Vector3(
+                Screen.width * 0.5f,
+                Screen.height * 0.5f,
+                0f
+            );
+
             ray = playerCamera.ScreenPointToRay(screenCenter);
         }
-        else   // 第三人称鼠标发射射线
+        else
         {
+            // 第三人称：从鼠标所在位置发射射线
             ray = playerCamera.ScreenPointToRay(Input.mousePosition);
         }
 
@@ -538,14 +699,25 @@ public class BlockInteraction : MonoBehaviour
             return false;
         }
 
-        // 只允许操作World下的方块
+        // 必须击中真正带 Block 组件的物体
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        if (targetBlock == null)
+        {
+            return false;
+        }
+
+        // 只允许操作 World 下的方块
         if (worldRoot != null && hit.collider.transform.parent != worldRoot)
         {
             return false;
         }
 
-        // 判断目标是否在玩家可交互范围内
-        float distanceToPlayer = Vector3.Distance(transform.position, hit.collider.transform.position);
+        // 检查玩家与目标方块的距离
+        float distanceToPlayer = Vector3.Distance(
+            transform.position,
+            hit.collider.transform.position
+        );
 
         if (distanceToPlayer > interactRange)
         {
@@ -563,10 +735,20 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        // 未来基岩等方块可设为不可破坏
+        if (targetBlock != null &&
+            targetBlock.Definition != null &&
+            !targetBlock.Definition.isBreakable)
+        {
+            return;
+        }
+
         Destroy(hit.collider.gameObject);
     }
 
-    // 放置目标方块
+    // 放置当前选择的方块
     private void TryPlaceBlock()
     {
         if (!TryGetTargetBlock(out RaycastHit hit))
@@ -574,38 +756,32 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // 根据命中的面法线计算新方块的位置
-        Vector3 placePosition = hit.collider.transform.position + hit.normal;
-
-        // 四舍五入到整数坐标，保证方块对齐网格
-        placePosition = new Vector3(
-            Mathf.Round(placePosition.x),
-            Mathf.Round(placePosition.y),
-            Mathf.Round(placePosition.z)
-        );
-
-        // 如果该位置已有碰撞体，则不能放置
-        if (Physics.CheckBox(placePosition, Vector3.one * 0.45f))
+        // 没有指定要放什么方块时，不执行放置
+        if (placeBlock == null)
         {
             return;
         }
 
-        // 创建新的Cube方块
-        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        block.transform.position = placePosition;
+        // 根据点击面的法线，获得相邻格子的位置
+        Vector3 placePosition = hit.collider.transform.position + hit.normal;
 
-        // 放到World节点下，保持Hierarchy整洁
-        if (worldRoot != null)
+        // 转为整数格子坐标，确保方块不偏移
+        Vector3Int gridPosition = new Vector3Int(
+            Mathf.RoundToInt(placePosition.x),
+            Mathf.RoundToInt(placePosition.y),
+            Mathf.RoundToInt(placePosition.z)
+        );
+
+        // 新位置已有碰撞体时，不允许重叠放置
+        if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
         {
-            block.transform.parent = worldRoot;
+            return;
         }
 
-        Renderer renderer = block.GetComponent<Renderer>();
-
-        // 设置方块材质
-        if (placeMaterial != null)
+        // 通过 VoxelWorld 创建方块，确保所有方块都有 Block 类型资料
+        if (voxelWorld != null)
         {
-            renderer.material = placeMaterial;
+            voxelWorld.CreateBlock(gridPosition, placeBlock);
         }
     }
 }
@@ -615,8 +791,8 @@ public class BlockInteraction : MonoBehaviour
 
 1. 把 `Main Camera` 拖到 `Player Camera`字段
 2. 把 `World` 拖到 `World Root`字段
-3. 把 `Grass.mat` 拖到 `Place Material`字段
 4. 把 `Main Camera` 拖到  `Camera Mode Controller `字段
+4. 把 `Assets/Blocks/GrassBlock`拖到 `Place Block`字段
 
 
 
@@ -730,8 +906,12 @@ private void ApplyCursorState()
 
 # 当前需求
 
-## 真正的多种类方块
+## 物品栏/背包/方块掉落
 
-当前仅仅是一种方块，然后引用不同材质，通过算法实现地形
+mc同款物品栏，屏幕下方有10个物品栏，前9个是放物品的，第10个是省略号，点击省略号进入背包
 
-为了防止将来返工，这里要规范成真正的实现多种方块的做法
+mc同款方块掉落效果，方块被破坏时，变小，悬浮在地面上
+
+
+
+当前代码右键放置的是草方块。背包系统完成后，只要把当前选中物品对应的 `BlockDefinition` 赋给 `placeBlock`，就能放置泥土、石头、木头或其他任何方块。

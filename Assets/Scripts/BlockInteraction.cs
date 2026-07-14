@@ -8,8 +8,10 @@ public class BlockInteraction : MonoBehaviour
     public CameraModeController cameraModeController;
 
     [Header("Placement")]
-    public Material placeMaterial;   // 放置的方块的材质
+    public BlockDefinition placeBlock;   // 放置的方块
     public float interactRange = 5f;   // 放置的范围
+
+    private VoxelWorld voxelWorld;
 
     private void Awake()
     {
@@ -22,16 +24,23 @@ public class BlockInteraction : MonoBehaviour
         {
             cameraModeController = playerCamera.GetComponent<CameraModeController>();
         }
+
+        // 从 World 物体获取 VoxelWorld，用它统一创建方块
+        if (worldRoot != null)
+        {
+            voxelWorld = worldRoot.GetComponent<VoxelWorld>();
+        }
     }
 
     private void Update()
     {
-        // 鼠标左键破坏，右键放置
+        // 鼠标左键破坏方块
         if (Input.GetMouseButtonDown(0))
         {
             TryBreakBlock();
         }
 
+        // 鼠标右键放置方块
         if (Input.GetMouseButtonDown(1))
         {
             TryPlaceBlock();
@@ -44,14 +53,20 @@ public class BlockInteraction : MonoBehaviour
 
         Ray ray;
 
-        // 第一人称屏幕中心发射射线
+        // 第一人称：从屏幕中心，也就是准星位置发射射线
         if (cameraModeController != null && cameraModeController.IsFirstPerson)
         {
-            Vector3 screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
+            Vector3 screenCenter = new Vector3(
+                Screen.width * 0.5f,
+                Screen.height * 0.5f,
+                0f
+            );
+
             ray = playerCamera.ScreenPointToRay(screenCenter);
         }
-        else   // 第三人称鼠标发射射线
+        else
         {
+            // 第三人称：从鼠标所在位置发射射线
             ray = playerCamera.ScreenPointToRay(Input.mousePosition);
         }
 
@@ -61,14 +76,25 @@ public class BlockInteraction : MonoBehaviour
             return false;
         }
 
-        // 只允许操作World下的方块
+        // 必须击中真正带 Block 组件的物体
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        if (targetBlock == null)
+        {
+            return false;
+        }
+
+        // 只允许操作 World 下的方块
         if (worldRoot != null && hit.collider.transform.parent != worldRoot)
         {
             return false;
         }
 
-        // 判断目标是否在玩家可交互范围内
-        float distanceToPlayer = Vector3.Distance(transform.position, hit.collider.transform.position);
+        // 检查玩家与目标方块的距离
+        float distanceToPlayer = Vector3.Distance(
+            transform.position,
+            hit.collider.transform.position
+        );
 
         if (distanceToPlayer > interactRange)
         {
@@ -86,10 +112,20 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        // 未来基岩等方块可设为不可破坏
+        if (targetBlock != null &&
+            targetBlock.Definition != null &&
+            !targetBlock.Definition.isBreakable)
+        {
+            return;
+        }
+
         Destroy(hit.collider.gameObject);
     }
 
-    // 放置目标方块
+    // 放置当前选择的方块
     private void TryPlaceBlock()
     {
         if (!TryGetTargetBlock(out RaycastHit hit))
@@ -97,38 +133,32 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // 根据命中的面法线计算新方块的位置
-        Vector3 placePosition = hit.collider.transform.position + hit.normal;
-
-        // 四舍五入到整数坐标，保证方块对齐网格
-        placePosition = new Vector3(
-            Mathf.Round(placePosition.x),
-            Mathf.Round(placePosition.y),
-            Mathf.Round(placePosition.z)
-        );
-
-        // 如果该位置已有碰撞体，则不能放置
-        if (Physics.CheckBox(placePosition, Vector3.one * 0.45f))
+        // 没有指定要放什么方块时，不执行放置
+        if (placeBlock == null)
         {
             return;
         }
 
-        // 创建新的Cube方块
-        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        block.transform.position = placePosition;
+        // 根据点击面的法线，获得相邻格子的位置
+        Vector3 placePosition = hit.collider.transform.position + hit.normal;
 
-        // 放到World节点下，保持Hierarchy整洁
-        if (worldRoot != null)
+        // 转为整数格子坐标，确保方块不偏移
+        Vector3Int gridPosition = new Vector3Int(
+            Mathf.RoundToInt(placePosition.x),
+            Mathf.RoundToInt(placePosition.y),
+            Mathf.RoundToInt(placePosition.z)
+        );
+
+        // 新位置已有碰撞体时，不允许重叠放置
+        if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
         {
-            block.transform.parent = worldRoot;
+            return;
         }
 
-        Renderer renderer = block.GetComponent<Renderer>();
-
-        // 设置方块材质
-        if (placeMaterial != null)
+        // 通过 VoxelWorld 创建方块，确保所有方块都有 Block 类型资料
+        if (voxelWorld != null)
         {
-            renderer.material = placeMaterial;
+            voxelWorld.CreateBlock(gridPosition, placeBlock);
         }
     }
 }
