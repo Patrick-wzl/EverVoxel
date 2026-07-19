@@ -4,7 +4,6 @@ public class Block : MonoBehaviour
 {
     [Header("Block Data")]
     [SerializeField] private BlockDefinition definition;
-
     public BlockDefinition Definition => definition;
 
     // 初始化方块
@@ -14,7 +13,6 @@ public class Block : MonoBehaviour
         ApplyDefinition();
     }
 
-    // 根据方块资料，应用材质与碰撞体设置
     private void ApplyDefinition()
     {
         if (definition == null)
@@ -30,7 +28,7 @@ public class Block : MonoBehaviour
             blockRenderer.material = definition.material;
         }
 
-        // 根据方块资料决定是否启用碰撞体
+        // 是否启用碰撞体
         Collider blockCollider = GetComponent<Collider>();
 
         if (blockCollider != null)
@@ -38,7 +36,7 @@ public class Block : MonoBehaviour
             blockCollider.enabled = definition.isSolid;
         }
 
-        // 场景中显示的物体名称更清楚，例如：GrassBlock (草方块)
+        // 场景中显示的物体名称更清楚【例如：GrassBlock (草方块)】
         gameObject.name = $"{definition.name} ({definition.displayName})";
     }
 }

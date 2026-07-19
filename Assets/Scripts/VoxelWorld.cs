@@ -11,7 +11,6 @@ public class VoxelWorld : MonoBehaviour
     public float noiseScale = 12f;
 
     [Header("Block Types")]
-    // 不再直接引用材质，而是引用真正的方块定义
     public BlockDefinition grassBlock;
     public BlockDefinition dirtBlock;
     public BlockDefinition stoneBlock;
@@ -62,19 +61,16 @@ public class VoxelWorld : MonoBehaviour
         CreateBlock(new Vector3Int(x, y, z), blockToCreate);
     }
 
-    // 创建一个真正具有方块定义的方块
+    // 创建方块
     public GameObject CreateBlock(Vector3Int blockPosition, BlockDefinition blockDefinition)
     {
-        // 没有方块资料时不生成，避免产生没有类型的 Cube
         if (blockDefinition == null)
         {
             return null;
         }
 
-        // 创建 Unity Cube，Cube 自带 Mesh Renderer 和 Box Collider
+        // 创建 Unity Cube【Cube 自带 Mesh Renderer 和 Box Collider】
         GameObject blockObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-
-        // Vector3Int 保证方块始终对齐整数网格
         blockObject.transform.position = blockPosition;
 
         // 所有方块都放到 World 下
