@@ -52,11 +52,13 @@ Both
 - 简单地形：已实现
 - 人物移动：已实现
 - 视角切换：已实现
-- 背包/装备栏/物品掉落：待实现
-- 方块血条
-- 人物血条
+- 背包/装备栏/物品掉落：已实现
+- 方块坚硬度：已实现
+- 人物血条：
 - 第三人称视角：待讨论，待整改
+- 确定画风
 - 简单美术
+- 功能晚上
 
 第二阶段（MC）：
 
@@ -91,6 +93,8 @@ Both
 
 角色在一片方块地形，wsad上下左右移动，空格跳跃，按v切换视角，放置破坏方块
 
+按数字键或点击物品栏切换物品，按B或点击...打开背包
+
 ## 方块
 
 Assets/Materials 创建 3 个材质：右键 -> Create > Material
@@ -118,6 +122,8 @@ public class BlockDefinition : ScriptableObject
     [Header("Appearance")]
     // 材质
     public Material material;
+    // 图标
+    public Sprite itemIcon;
 
     [Header("Gameplay")]
     // 是否有实体碰撞
@@ -1149,19 +1155,1146 @@ public class BlockDrop : MonoBehaviour
 
 
 
+## 物品栏/背包
+
+### 1、在 `Assets/Scripts` 新建 `PlayerInventory.cs`
+
+```c#
+using System;
+using UnityEngine;
+
+[Serializable]
+public class InventorySlotData
+{
+    public BlockDefinition block;
+
+    [Min(0)]
+    public int amount;
+
+    public bool IsEmpty => block == null || amount <= 0;
+
+    public void Clear()
+    {
+        block = null;
+        amount = 0;
+    }
+}
+
+[RequireComponent(typeof(BlockInteraction))]
+public class PlayerInventory : MonoBehaviour
+{
+    public const int HotbarSlotCount = 9;
+    public const int BackpackSlotCount = 27;
+    public const int MaxStackSize = 999;
+
+    [Header("References")]
+    public BlockInteraction blockInteraction;
+
+    [Header("快捷栏：屏幕下方前 9 格")]
+    public InventorySlotData[] hotbar = new InventorySlotData[HotbarSlotCount];
+
+    [Header("背包：27 格")]
+    public InventorySlotData[] backpack = new InventorySlotData[BackpackSlotCount];
+
+    [Range(0, HotbarSlotCount - 1)]
+    public int selectedHotbarIndex;
+
+    public int SelectedHotbarIndex => selectedHotbarIndex;
+
+    public event Action InventoryChanged;
+
+    private void Awake()
+    {
+        if (blockInteraction == null)
+        {
+            blockInteraction = GetComponent<BlockInteraction>();
+        }
+
+        EnsureSlots();
+    }
+
+    private void Start()
+    {
+        SelectHotbarSlot(selectedHotbarIndex);
+        NotifyChanged();
+    }
+
+    private void Update()
+    {
+        if (InventoryUI.IsAnyInventoryOpen)
+        {
+            return;
+        }
+
+        for (int i = 0; i < HotbarSlotCount; i++)
+        {
+            if (Input.GetKeyDown(KeyCode.Alpha1 + i))
+            {
+                SelectHotbarSlot(i);
+            }
+        }
+    }
+
+    private void EnsureSlots()
+    {
+        if (hotbar == null || hotbar.Length != HotbarSlotCount)
+        {
+            hotbar = new InventorySlotData[HotbarSlotCount];
+        }
+
+        if (backpack == null || backpack.Length != BackpackSlotCount)
+        {
+            backpack = new InventorySlotData[BackpackSlotCount];
+        }
+
+        for (int i = 0; i < hotbar.Length; i++)
+        {
+            if (hotbar[i] == null)
+            {
+                hotbar[i] = new InventorySlotData();
+            }
+        }
+
+        for (int i = 0; i < backpack.Length; i++)
+        {
+            if (backpack[i] == null)
+            {
+                backpack[i] = new InventorySlotData();
+            }
+        }
+    }
+
+    public InventorySlotData GetHotbarSlot(int index)
+    {
+        return index >= 0 && index < hotbar.Length ? hotbar[index] : null;
+    }
+
+    public InventorySlotData GetBackpackSlot(int index)
+    {
+        return index >= 0 && index < backpack.Length ? backpack[index] : null;
+    }
+
+    public bool HasSelectedItem()
+    {
+        InventorySlotData slot = GetHotbarSlot(selectedHotbarIndex);
+        return slot != null && !slot.IsEmpty;
+    }
+
+    public void SelectHotbarSlot(int index)
+    {
+        if (index < 0 || index >= HotbarSlotCount)
+        {
+            return;
+        }
+
+        selectedHotbarIndex = index;
+        ApplySelectedItemToPlacement();
+        NotifyChanged();
+    }
+
+    public bool ConsumeSelectedItem()
+    {
+        InventorySlotData slot = GetHotbarSlot(selectedHotbarIndex);
+
+        if (slot == null || slot.IsEmpty)
+        {
+            return false;
+        }
+
+        slot.amount--;
+
+        if (slot.amount <= 0)
+        {
+            slot.Clear();
+        }
+
+        ApplySelectedItemToPlacement();
+        NotifyChanged();
+        return true;
+    }
+
+    // 掉落物拾取时调用。
+    // 同类方块优先填满已有格子；每格最多 999；之后自动寻找下一格。
+    public bool TryAddItem(BlockDefinition blockDefinition, int amount)
+    {
+        if (blockDefinition == null || amount <= 0)
+        {
+            return false;
+        }
+
+        int remaining = amount;
+
+        remaining = AddToExistingSlots(hotbar, blockDefinition, remaining);
+        remaining = AddToExistingSlots(backpack, blockDefinition, remaining);
+
+        remaining = AddToEmptySlots(hotbar, blockDefinition, remaining);
+        remaining = AddToEmptySlots(backpack, blockDefinition, remaining);
+
+        if (remaining != amount)
+        {
+            ApplySelectedItemToPlacement();
+            NotifyChanged();
+        }
+
+        // true 代表全部加入背包；false 代表背包已经完全满了
+        return remaining == 0;
+    }
+
+    private int AddToExistingSlots(
+        InventorySlotData[] slots,
+        BlockDefinition blockDefinition,
+        int remaining)
+    {
+        foreach (InventorySlotData slot in slots)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+
+            if (slot.IsEmpty || slot.block != blockDefinition)
+            {
+                continue;
+            }
+
+            int canAdd = MaxStackSize - slot.amount;
+
+            if (canAdd <= 0)
+            {
+                continue;
+            }
+
+            int addAmount = Mathf.Min(canAdd, remaining);
+            slot.amount += addAmount;
+            remaining -= addAmount;
+        }
+
+        return remaining;
+    }
+
+    private int AddToEmptySlots(
+        InventorySlotData[] slots,
+        BlockDefinition blockDefinition,
+        int remaining)
+    {
+        foreach (InventorySlotData slot in slots)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+
+            if (!slot.IsEmpty)
+            {
+                continue;
+            }
+
+            int addAmount = Mathf.Min(MaxStackSize, remaining);
+            slot.block = blockDefinition;
+            slot.amount = addAmount;
+            remaining -= addAmount;
+        }
+
+        return remaining;
+    }
+
+    public void SwapSelectedHotbarWithBackpack(int backpackIndex)
+    {
+        InventorySlotData hotbarSlot = GetHotbarSlot(selectedHotbarIndex);
+        InventorySlotData backpackSlot = GetBackpackSlot(backpackIndex);
+
+        if (hotbarSlot == null || backpackSlot == null)
+        {
+            return;
+        }
+
+        BlockDefinition temporaryBlock = hotbarSlot.block;
+        int temporaryAmount = hotbarSlot.amount;
+
+        hotbarSlot.block = backpackSlot.block;
+        hotbarSlot.amount = backpackSlot.amount;
+
+        backpackSlot.block = temporaryBlock;
+        backpackSlot.amount = temporaryAmount;
+
+        ApplySelectedItemToPlacement();
+        NotifyChanged();
+    }
+
+    private void ApplySelectedItemToPlacement()
+    {
+        if (blockInteraction == null)
+        {
+            return;
+        }
+
+        InventorySlotData slot = GetHotbarSlot(selectedHotbarIndex);
+
+        blockInteraction.placeBlock =
+            slot != null && !slot.IsEmpty
+            ? slot.block
+            : null;
+    }
+
+    private void NotifyChanged()
+    {
+        InventoryChanged?.Invoke();
+    }
+}
+```
+
+### 2、替换 `BlockDrop.cs`
+
+```c#
+using UnityEngine;
+
+public class BlockDrop : MonoBehaviour
+{
+    [Header("Drop Data")]
+    [SerializeField] private BlockDefinition definition;
+
+    [Header("Visual")]
+    public float dropScale = 0.35f;
+    public float floatingHeight = 0.08f;
+    public float floatingSpeed = 2.5f;
+    public float rotationSpeed = 70f;
+
+    [Header("Fall")]
+    public float fallSpeed = 5f;
+    public float groundCheckPadding = 0.03f;
+
+    [Header("Pickup")]
+    public float pickupRange = 1.5f;
+    public float pickupDelay = 0.35f;
+
+    private bool hasLanded;
+    private Vector3 restingPosition;
+    private float floatingOffset;
+    private float aliveTime;
+    private PlayerInventory playerInventory;
+
+    public BlockDefinition Definition => definition;
+
+    public void Initialize(BlockDefinition blockDefinition)
+    {
+        definition = blockDefinition;
+
+        transform.localScale = Vector3.one * dropScale;
+        transform.rotation = Random.rotation;
+        floatingOffset = Random.Range(0f, Mathf.PI * 2f);
+
+        Renderer dropRenderer = GetComponent<Renderer>();
+
+        if (dropRenderer != null &&
+            definition != null &&
+            definition.material != null)
+        {
+            dropRenderer.sharedMaterial = definition.material;
+        }
+
+        // 掉落物不挡住人物，也不会妨碍放置方块。
+        Collider dropCollider = GetComponent<Collider>();
+
+        if (dropCollider != null)
+        {
+            dropCollider.enabled = false;
+        }
+
+        string blockName = definition != null
+            ? definition.displayName
+            : "未知方块";
+
+        gameObject.name = $"掉落物 - {blockName}";
+    }
+
+    private void Start()
+    {
+        playerInventory = FindFirstObjectByType<PlayerInventory>();
+    }
+
+    private void Update()
+    {
+        aliveTime += Time.deltaTime;
+
+        if (!hasLanded)
+        {
+            FallToGround();
+            return;
+        }
+
+        FloatAndRotate();
+        TryPickup();
+    }
+
+    private void FallToGround()
+    {
+        float halfDropHeight = transform.localScale.y * 0.5f;
+        float fallDistance =
+            fallSpeed * Time.deltaTime +
+            halfDropHeight +
+            groundCheckPadding;
+
+        if (TryGetGroundBelow(fallDistance, out RaycastHit groundHit))
+        {
+            restingPosition = new Vector3(
+                transform.position.x,
+                groundHit.point.y + halfDropHeight,
+                transform.position.z
+            );
+
+            transform.position = restingPosition;
+            hasLanded = true;
+            return;
+        }
+
+        transform.position += Vector3.down * fallSpeed * Time.deltaTime;
+    }
+
+    private bool TryGetGroundBelow(
+        float checkDistance,
+        out RaycastHit closestGround)
+    {
+        closestGround = default;
+        float closestDistance = float.MaxValue;
+
+        RaycastHit[] hits = Physics.RaycastAll(
+            transform.position,
+            Vector3.down,
+            checkDistance
+        );
+
+        foreach (RaycastHit hit in hits)
+        {
+            Block block = hit.collider.GetComponent<Block>();
+
+            if (block == null)
+            {
+                continue;
+            }
+
+            if (hit.distance < closestDistance)
+            {
+                closestDistance = hit.distance;
+                closestGround = hit;
+            }
+        }
+
+        return closestDistance != float.MaxValue;
+    }
+
+    private void FloatAndRotate()
+    {
+        float floatingY = Mathf.Sin(
+            Time.time * floatingSpeed + floatingOffset
+        ) * floatingHeight;
+
+        transform.position = restingPosition + Vector3.up * floatingY;
+
+        transform.Rotate(
+            Vector3.up,
+            rotationSpeed * Time.deltaTime,
+            Space.World
+        );
+    }
+
+    private void TryPickup()
+    {
+        if (aliveTime < pickupDelay || definition == null)
+        {
+            return;
+        }
+
+        if (playerInventory == null)
+        {
+            playerInventory = FindFirstObjectByType<PlayerInventory>();
+
+            if (playerInventory == null)
+            {
+                return;
+            }
+        }
+
+        float distance = Vector3.Distance(
+            transform.position,
+            playerInventory.transform.position
+        );
+
+        if (distance > pickupRange)
+        {
+            return;
+        }
+
+        // 此掉落物代表一个方块。
+        // 拾取失败说明全部 36 格背包都无法再放入该物品。
+        if (playerInventory.TryAddItem(definition, 1))
+        {
+            Destroy(gameObject);
+        }
+    }
+}
+```
+
+### 3、替换`BlockInteraction.cs`
+
+```c#
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+public class BlockInteraction : MonoBehaviour
+{
+    [Header("References")]
+    public Camera playerCamera;
+    public Transform worldRoot;
+    public CameraModeController cameraModeController;
+
+    [Header("Placement")]
+    public BlockDefinition placeBlock;
+    public float interactRange = 5f;
+
+    [Header("Breaking")]
+    public float baseBreakTime = 0.75f;
+
+    private VoxelWorld voxelWorld;
+    private PlayerInventory inventory;
+    private Block breakingBlock;
+    private float currentBreakTime;
+
+    private void Awake()
+    {
+        if (playerCamera == null)
+        {
+            playerCamera = Camera.main;
+        }
+
+        if (cameraModeController == null && playerCamera != null)
+        {
+            cameraModeController =
+                playerCamera.GetComponent<CameraModeController>();
+        }
+
+        if (worldRoot != null)
+        {
+            voxelWorld = worldRoot.GetComponent<VoxelWorld>();
+        }
+
+        inventory = GetComponent<PlayerInventory>();
+    }
+
+    private void Update()
+    {
+        if (InventoryUI.IsAnyInventoryOpen)
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        if (EventSystem.current != null &&
+            EventSystem.current.IsPointerOverGameObject())
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            BeginBreakingBlock();
+        }
+
+        if (Input.GetMouseButton(0))
+        {
+            ContinueBreakingBlock();
+        }
+
+        if (Input.GetMouseButtonUp(0))
+        {
+            CancelBreakingBlock();
+        }
+
+        if (Input.GetMouseButtonDown(1))
+        {
+            TryPlaceBlock();
+        }
+    }
+
+    private bool TryGetTargetBlock(out RaycastHit hit)
+    {
+        hit = default;
+
+        Ray ray;
+
+        if (cameraModeController != null &&
+            cameraModeController.IsFirstPerson)
+        {
+            ray = playerCamera.ScreenPointToRay(
+                new Vector3(
+                    Screen.width * 0.5f,
+                    Screen.height * 0.5f,
+                    0f
+                )
+            );
+        }
+        else
+        {
+            ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+        }
+
+        if (!Physics.Raycast(ray, out hit, 100f))
+        {
+            return false;
+        }
+
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        if (targetBlock == null)
+        {
+            return false;
+        }
+
+        if (worldRoot != null &&
+            hit.collider.transform.parent != worldRoot)
+        {
+            return false;
+        }
+
+        return Vector3.Distance(
+            transform.position,
+            hit.collider.transform.position
+        ) <= interactRange;
+    }
+
+    private void BeginBreakingBlock()
+    {
+        CancelBreakingBlock();
+
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Block targetBlock = hit.collider.GetComponent<Block>();
+
+        if (targetBlock == null ||
+            targetBlock.Definition == null ||
+            !targetBlock.Definition.isBreakable)
+        {
+            return;
+        }
+
+        breakingBlock = targetBlock;
+    }
+
+    private void ContinueBreakingBlock()
+    {
+        if (breakingBlock == null)
+        {
+            return;
+        }
+
+        if (!TryGetTargetBlock(out RaycastHit hit) ||
+            hit.collider.GetComponent<Block>() != breakingBlock)
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        BlockDefinition definition = breakingBlock.Definition;
+
+        if (definition == null || !definition.isBreakable)
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        float breakTime =
+            baseBreakTime * Mathf.Max(0.05f, definition.hardness);
+
+        currentBreakTime += Time.deltaTime;
+
+        if (currentBreakTime >= breakTime)
+        {
+            Vector3 position = breakingBlock.transform.position;
+
+            if (voxelWorld != null)
+            {
+                voxelWorld.SpawnBlockDrop(position, definition);
+            }
+
+            Destroy(breakingBlock.gameObject);
+            CancelBreakingBlock();
+        }
+    }
+
+    private void CancelBreakingBlock()
+    {
+        breakingBlock = null;
+        currentBreakTime = 0f;
+    }
+
+    private void TryPlaceBlock()
+    {
+        if (inventory != null && !inventory.HasSelectedItem())
+        {
+            return;
+        }
+
+        if (placeBlock == null || !TryGetTargetBlock(out RaycastHit hit))
+        {
+            return;
+        }
+
+        Vector3 placePosition = hit.collider.transform.position + hit.normal;
+
+        Vector3Int gridPosition = new Vector3Int(
+            Mathf.RoundToInt(placePosition.x),
+            Mathf.RoundToInt(placePosition.y),
+            Mathf.RoundToInt(placePosition.z)
+        );
+
+        if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
+        {
+            return;
+        }
+
+        if (voxelWorld == null)
+        {
+            return;
+        }
+
+        GameObject createdBlock =
+            voxelWorld.CreateBlock(gridPosition, placeBlock);
+
+        if (createdBlock != null && inventory != null)
+        {
+            inventory.ConsumeSelectedItem();
+        }
+    }
+}
+```
+
+### 4、在 `Assets/Scripts` 新建 `InventoryUI.cs`
+
+```c#
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class InventoryUI : MonoBehaviour
+{
+    private class SlotView
+    {
+        public Image icon;
+        public Text amount;
+        public GameObject selected;
+        public bool isHotbar;
+        public int index;
+    }
+
+    public static bool IsAnyInventoryOpen { get; private set; }
+
+    [Header("References")]
+    public PlayerInventory playerInventory;
+    public CameraModeController cameraModeController;
+
+    [Header("Keys")]
+    public KeyCode toggleKey = KeyCode.B;
+
+    private readonly List<SlotView> hotbarSlots = new();
+    private readonly List<SlotView> backpackSlots = new();
+
+    private GameObject inventoryPanel;
+    private Font defaultFont;
+
+    private void Start()
+    {
+        if (playerInventory == null)
+        {
+            playerInventory = FindFirstObjectByType<PlayerInventory>();
+        }
+
+        if (cameraModeController == null && Camera.main != null)
+        {
+            cameraModeController =
+                Camera.main.GetComponent<CameraModeController>();
+        }
+
+        defaultFont = Resources.GetBuiltinResource<Font>(
+            "LegacyRuntime.ttf"
+        );
+
+        CreateHotbar();
+        CreateBackpack();
+
+        if (playerInventory != null)
+        {
+            playerInventory.InventoryChanged += RefreshAll;
+        }
+
+        SetInventoryOpen(false);
+        RefreshAll();
+    }
+
+    private void Update()
+    {
+        if (Input.GetKeyDown(toggleKey))
+        {
+            SetInventoryOpen(!IsAnyInventoryOpen);
+        }
+
+        if (IsAnyInventoryOpen && Input.GetKeyDown(KeyCode.Escape))
+        {
+            SetInventoryOpen(false);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (playerInventory != null)
+        {
+            playerInventory.InventoryChanged -= RefreshAll;
+        }
+
+        Time.timeScale = 1f;
+        IsAnyInventoryOpen = false;
+    }
+
+    private void CreateHotbar()
+    {
+        GameObject root = CreateUIObject("Hotbar", transform);
+        RectTransform rect = root.GetComponent<RectTransform>();
+
+        rect.anchorMin = new Vector2(0.5f, 0f);
+        rect.anchorMax = new Vector2(0.5f, 0f);
+        rect.pivot = new Vector2(0.5f, 0f);
+        rect.anchoredPosition = new Vector2(0f, 45f);
+        rect.sizeDelta = new Vector2(860f, 88f);
+
+        Image background = root.AddComponent<Image>();
+        background.color = new Color(0f, 0f, 0f, 0.65f);
+
+        HorizontalLayoutGroup layout =
+            root.AddComponent<HorizontalLayoutGroup>();
+
+        layout.padding = new RectOffset(6, 6, 6, 6);
+        layout.spacing = 5f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+
+        for (int i = 0; i < PlayerInventory.HotbarSlotCount; i++)
+        {
+            int slotIndex = i;
+            SlotView view = CreateSlot(root.transform, true, slotIndex);
+
+            view.selected.GetComponent<Image>().color =
+                new Color(1f, 0.8f, 0f, 0.35f);
+
+            root.transform.GetChild(i).GetComponent<Button>().onClick
+                .AddListener(() => playerInventory.SelectHotbarSlot(slotIndex));
+
+            hotbarSlots.Add(view);
+        }
+
+        GameObject moreButton = CreateButton(root.transform, "…");
+        moreButton.GetComponent<Button>().onClick.AddListener(
+            () => SetInventoryOpen(true)
+        );
+    }
+
+    private void CreateBackpack()
+    {
+        inventoryPanel = CreateUIObject("InventoryPanel", transform);
+
+        RectTransform panelRect =
+            inventoryPanel.GetComponent<RectTransform>();
+
+        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.sizeDelta = new Vector2(820f, 470f);
+
+        Image panelImage = inventoryPanel.AddComponent<Image>();
+        panelImage.color = new Color(0.08f, 0.08f, 0.08f, 0.95f);
+
+        GameObject title = CreateTextObject(
+            "Title",
+            inventoryPanel.transform,
+            "背包"
+        );
+
+        RectTransform titleRect = title.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0f, 1f);
+        titleRect.anchorMax = new Vector2(1f, 1f);
+        titleRect.pivot = new Vector2(0.5f, 1f);
+        titleRect.anchoredPosition = new Vector2(0f, -18f);
+        titleRect.sizeDelta = new Vector2(0f, 40f);
+
+        title.GetComponent<Text>().alignment = TextAnchor.MiddleCenter;
+        title.GetComponent<Text>().fontSize = 28;
+
+        GameObject closeButton = CreateButton(
+            inventoryPanel.transform,
+            "X"
+        );
+
+        RectTransform closeRect =
+            closeButton.GetComponent<RectTransform>();
+
+        closeRect.anchorMin = new Vector2(1f, 1f);
+        closeRect.anchorMax = new Vector2(1f, 1f);
+        closeRect.pivot = new Vector2(1f, 1f);
+        closeRect.anchoredPosition = new Vector2(-15f, -15f);
+
+        closeButton.GetComponent<Button>().onClick.AddListener(
+            () => SetInventoryOpen(false)
+        );
+
+        GameObject grid = CreateUIObject(
+            "BackpackSlots",
+            inventoryPanel.transform
+        );
+
+        RectTransform gridRect = grid.GetComponent<RectTransform>();
+        gridRect.anchorMin = new Vector2(0.5f, 0.5f);
+        gridRect.anchorMax = new Vector2(0.5f, 0.5f);
+        gridRect.pivot = new Vector2(0.5f, 0.5f);
+        gridRect.sizeDelta = new Vector2(744f, 300f);
+        gridRect.anchoredPosition = new Vector2(0f, -25f);
+
+        GridLayoutGroup gridLayout = grid.AddComponent<GridLayoutGroup>();
+        gridLayout.cellSize = new Vector2(76f, 76f);
+        gridLayout.spacing = new Vector2(6f, 6f);
+        gridLayout.constraint =
+            GridLayoutGroup.Constraint.FixedColumnCount;
+        gridLayout.constraintCount = 9;
+        gridLayout.childAlignment = TextAnchor.MiddleCenter;
+
+        for (int i = 0; i < PlayerInventory.BackpackSlotCount; i++)
+        {
+            int slotIndex = i;
+            SlotView view = CreateSlot(grid.transform, false, slotIndex);
+
+            grid.transform.GetChild(i).GetComponent<Button>().onClick
+                .AddListener(() =>
+                    playerInventory.SwapSelectedHotbarWithBackpack(slotIndex)
+                );
+
+            backpackSlots.Add(view);
+        }
+    }
+
+    private SlotView CreateSlot(
+        Transform parent,
+        bool isHotbar,
+        int index)
+    {
+        GameObject slot = CreateButton(parent, "");
+
+        Image background = slot.GetComponent<Image>();
+        background.color = new Color(0.25f, 0.25f, 0.25f, 1f);
+
+        GameObject iconObject = CreateUIObject("Icon", slot.transform);
+        Image icon = iconObject.AddComponent<Image>();
+        icon.raycastTarget = false;
+        Stretch(iconObject.GetComponent<RectTransform>(), 8f);
+
+        GameObject amountObject = CreateTextObject(
+            "Amount",
+            slot.transform,
+            ""
+        );
+
+        RectTransform amountRect =
+            amountObject.GetComponent<RectTransform>();
+
+        amountRect.anchorMin = Vector2.zero;
+        amountRect.anchorMax = new Vector2(1f, 0f);
+        amountRect.pivot = new Vector2(1f, 0f);
+        amountRect.anchoredPosition = new Vector2(-5f, 4f);
+        amountRect.sizeDelta = new Vector2(-10f, 28f);
+
+        Text amountText = amountObject.GetComponent<Text>();
+        amountText.alignment = TextAnchor.LowerRight;
+        amountText.fontSize = 20;
+        amountText.color = Color.white;
+        amountText.raycastTarget = false;
+
+        GameObject selected = CreateUIObject("Selected", slot.transform);
+        Image selectedImage = selected.AddComponent<Image>();
+        selectedImage.raycastTarget = false;
+        Stretch(selected.GetComponent<RectTransform>(), 0f);
+
+        return new SlotView
+        {
+            icon = icon,
+            amount = amountText,
+            selected = selected,
+            isHotbar = isHotbar,
+            index = index
+        };
+    }
+
+    private GameObject CreateButton(Transform parent, string text)
+    {
+        GameObject buttonObject = CreateUIObject("Button", parent);
+
+        LayoutElement layout = buttonObject.AddComponent<LayoutElement>();
+        layout.preferredWidth = 76f;
+        layout.preferredHeight = 76f;
+
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = new Color(0.25f, 0.25f, 0.25f, 1f);
+
+        Button button = buttonObject.AddComponent<Button>();
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            GameObject textObject = CreateTextObject(
+                "Text",
+                buttonObject.transform,
+                text
+            );
+
+            Stretch(textObject.GetComponent<RectTransform>(), 0f);
+
+            Text uiText = textObject.GetComponent<Text>();
+            uiText.alignment = TextAnchor.MiddleCenter;
+            uiText.fontSize = 36;
+            uiText.raycastTarget = false;
+        }
+
+        return buttonObject;
+    }
+
+    private GameObject CreateTextObject(
+        string name,
+        Transform parent,
+        string content)
+    {
+        GameObject textObject = CreateUIObject(name, parent);
+        Text text = textObject.AddComponent<Text>();
+
+        text.font = defaultFont;
+        text.text = content;
+        text.color = Color.white;
+
+        return textObject;
+    }
+
+    private GameObject CreateUIObject(string name, Transform parent)
+    {
+        GameObject uiObject = new GameObject(
+            name,
+            typeof(RectTransform)
+        );
+
+        uiObject.transform.SetParent(parent, false);
+        return uiObject;
+    }
+
+    private void Stretch(RectTransform rect, float padding)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(padding, padding);
+        rect.offsetMax = new Vector2(-padding, -padding);
+    }
+
+    private void RefreshAll()
+    {
+        RefreshList(hotbarSlots);
+        RefreshList(backpackSlots);
+    }
+
+    private void RefreshList(List<SlotView> slots)
+    {
+        if (playerInventory == null)
+        {
+            return;
+        }
+
+        foreach (SlotView view in slots)
+        {
+            InventorySlotData data = view.isHotbar
+                ? playerInventory.GetHotbarSlot(view.index)
+                : playerInventory.GetBackpackSlot(view.index);
+
+            bool hasItem = data != null && !data.IsEmpty;
+
+            view.icon.enabled =
+                hasItem &&
+                data.block != null &&
+                data.block.itemIcon != null;
+
+            if (view.icon.enabled)
+            {
+                view.icon.sprite = data.block.itemIcon;
+            }
+
+            view.amount.text = hasItem && data.amount > 1
+                ? data.amount.ToString()
+                : "";
+
+            view.selected.SetActive(
+                view.isHotbar &&
+                playerInventory.SelectedHotbarIndex == view.index
+            );
+        }
+    }
+
+    private void SetInventoryOpen(bool isOpen)
+    {
+        IsAnyInventoryOpen = isOpen;
+
+        if (inventoryPanel != null)
+        {
+            inventoryPanel.SetActive(isOpen);
+        }
+
+        Time.timeScale = isOpen ? 0f : 1f;
+
+        if (isOpen)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            return;
+        }
+
+        bool firstPerson =
+            cameraModeController != null &&
+            cameraModeController.IsFirstPerson;
+
+        Cursor.lockState = firstPerson
+            ? CursorLockMode.Locked
+            : CursorLockMode.None;
+
+        Cursor.visible = !firstPerson;
+    }
+}
+```
+
+### 5、在 Unity 中挂载组件
+
+给 Hierarchy 中的 Player 添加组件：
+
+```
+Add Component > PlayerInventory
+```
+
+在`Player Inventory`组件中：把 Hierarchy 里的 `Player` 拖入 `Block Interaction`字段 
+
+
+
+给 Hierarchy 中的 Canvas 添加组件：
+
+```
+Add Component > InventoryUI
+```
+
+在`Inventory UI`组件中，把 Hierarchy 中的 `Player`拖入`Player Inventory`字段
+
+在`Inventory UI`组件中，把 Hierarchy 中的 `Main Camera`拖入`Camera Mode Controller` 字段
+
+
+
 # 当前需求
-
-## 物品栏/背包/方块掉落
-
-不同种类方块破坏需要不同的时间，然后mc同款方块掉落效果，方块被破坏时，变小，悬浮在地面上已实现
-
-
-
-mc同款物品栏，屏幕下方有10个物品栏，前9个是放物品的，第10个是省略号，点击省略号进入背包
-
-当前代码右键放置的是草方块。背包系统完成后，只要把当前选中物品对应的 `BlockDefinition` 赋给 `placeBlock`，就能放置泥土、石头、木头或其他任何方块。
-
-要详细的步骤告诉我怎么做，至少像我文档那样详细。最后给出可以直接复制的完整代码
-
-【注意不要动我的代码，告诉我怎么做，我自己改】
 

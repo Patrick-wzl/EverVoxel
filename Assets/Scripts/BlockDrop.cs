@@ -1,7 +1,5 @@
 using UnityEngine;
 
-// 方块掉落
-// 待实现：以后制作背包时，在这里继续添加“靠近玩家自动拾取”的功能。
 public class BlockDrop : MonoBehaviour
 {
     [Header("Drop Data")]
@@ -17,36 +15,36 @@ public class BlockDrop : MonoBehaviour
     public float fallSpeed = 5f;
     public float groundCheckPadding = 0.03f;
 
+    [Header("Pickup")]
+    public float pickupRange = 1.5f;
+    public float pickupDelay = 0.35f;
+
     private bool hasLanded;
     private Vector3 restingPosition;
     private float floatingOffset;
+    private float aliveTime;
+    private PlayerInventory playerInventory;
 
-    // 掉落物代表的原始方块类型。
-    // 以后背包拾取时，可以通过它知道拾取的是草、泥土还是石头。
     public BlockDefinition Definition => definition;
 
     public void Initialize(BlockDefinition blockDefinition)
     {
         definition = blockDefinition;
 
-        // 掉落物缩小为普通方块的 35%
         transform.localScale = Vector3.one * dropScale;
-
-        // 让每个掉落物的初始角度略有不同，看起来更自然
         transform.rotation = Random.rotation;
-
         floatingOffset = Random.Range(0f, Mathf.PI * 2f);
 
         Renderer dropRenderer = GetComponent<Renderer>();
 
-        if (dropRenderer != null && definition != null && definition.material != null)
+        if (dropRenderer != null &&
+            definition != null &&
+            definition.material != null)
         {
-            // 使用原方块的材质，因此草会掉草方块，石头会掉石头
             dropRenderer.sharedMaterial = definition.material;
         }
 
-        // 掉落物暂时不需要实体碰撞。
-        // 这样它不会挡住玩家，也不会阻止后续放置方块。
+        // 掉落物不挡住人物，也不会妨碍放置方块。
         Collider dropCollider = GetComponent<Collider>();
 
         if (dropCollider != null)
@@ -54,12 +52,22 @@ public class BlockDrop : MonoBehaviour
             dropCollider.enabled = false;
         }
 
-        string blockName = definition != null ? definition.displayName : "未知方块";
+        string blockName = definition != null
+            ? definition.displayName
+            : "未知方块";
+
         gameObject.name = $"掉落物 - {blockName}";
+    }
+
+    private void Start()
+    {
+        playerInventory = FindFirstObjectByType<PlayerInventory>();
     }
 
     private void Update()
     {
+        aliveTime += Time.deltaTime;
+
         if (!hasLanded)
         {
             FallToGround();
@@ -67,16 +75,19 @@ public class BlockDrop : MonoBehaviour
         }
 
         FloatAndRotate();
+        TryPickup();
     }
 
     private void FallToGround()
     {
         float halfDropHeight = transform.localScale.y * 0.5f;
-        float fallDistance = fallSpeed * Time.deltaTime + halfDropHeight + groundCheckPadding;
+        float fallDistance =
+            fallSpeed * Time.deltaTime +
+            halfDropHeight +
+            groundCheckPadding;
 
         if (TryGetGroundBelow(fallDistance, out RaycastHit groundHit))
         {
-            // 掉落物中心停在地面上方，避免模型嵌进方块。
             restingPosition = new Vector3(
                 transform.position.x,
                 groundHit.point.y + halfDropHeight,
@@ -88,11 +99,12 @@ public class BlockDrop : MonoBehaviour
             return;
         }
 
-        // 下方暂时没有方块，继续下落
         transform.position += Vector3.down * fallSpeed * Time.deltaTime;
     }
 
-    private bool TryGetGroundBelow(float checkDistance, out RaycastHit closestGround)
+    private bool TryGetGroundBelow(
+        float checkDistance,
+        out RaycastHit closestGround)
     {
         closestGround = default;
         float closestDistance = float.MaxValue;
@@ -105,8 +117,6 @@ public class BlockDrop : MonoBehaviour
 
         foreach (RaycastHit hit in hits)
         {
-            // 只把真正带 Block 组件的物体视为地面。
-            // 玩家、相机、未来的怪物等不会让掉落物停住。
             Block block = hit.collider.GetComponent<Block>();
 
             if (block == null)
@@ -137,5 +147,40 @@ public class BlockDrop : MonoBehaviour
             rotationSpeed * Time.deltaTime,
             Space.World
         );
+    }
+
+    private void TryPickup()
+    {
+        if (aliveTime < pickupDelay || definition == null)
+        {
+            return;
+        }
+
+        if (playerInventory == null)
+        {
+            playerInventory = FindFirstObjectByType<PlayerInventory>();
+
+            if (playerInventory == null)
+            {
+                return;
+            }
+        }
+
+        float distance = Vector3.Distance(
+            transform.position,
+            playerInventory.transform.position
+        );
+
+        if (distance > pickupRange)
+        {
+            return;
+        }
+
+        // 此掉落物代表一个方块。
+        // 拾取失败说明全部 36 格背包都无法再放入该物品。
+        if (playerInventory.TryAddItem(definition, 1))
+        {
+            Destroy(gameObject);
+        }
     }
 }
