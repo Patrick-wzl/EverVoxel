@@ -56,6 +56,7 @@ Both
 - 方块血条
 - 人物血条
 - 第三人称视角：待讨论，待整改
+- 简单美术
 
 第二阶段（MC）：
 
@@ -287,6 +288,34 @@ public class VoxelWorld : MonoBehaviour
         block.Initialize(blockDefinition);
 
         return blockObject;
+    }
+
+    // 创建方块掉落物
+    public GameObject SpawnBlockDrop(Vector3 worldPosition, BlockDefinition blockDefinition)
+    {
+        if (blockDefinition == null)
+        {
+            return null;
+        }
+
+        GameObject dropObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+
+        // 让掉落物从被破坏方块稍微上方出现。
+        // X/Z 有轻微随机偏移，多个方块掉落时不会完全重叠。
+        Vector3 randomOffset = new Vector3(
+            Random.Range(-0.18f, 0.18f),
+            0.65f,
+            Random.Range(-0.18f, 0.18f)
+        );
+
+        dropObject.transform.position = worldPosition + randomOffset;
+        dropObject.transform.parent = transform;
+
+        // 掉落物不添加 Block 组件。因此玩家不能把掉落物再次当成世界方块挖掉。
+        BlockDrop blockDrop = dropObject.AddComponent<BlockDrop>();
+        blockDrop.Initialize(blockDefinition);
+
+        return dropObject;
     }
 }
 ```
@@ -697,10 +726,22 @@ public class BlockInteraction : MonoBehaviour
     public CameraModeController cameraModeController;
 
     [Header("Placement")]
-    public BlockDefinition placeBlock;   // 放置的方块
-    public float interactRange = 5f;   // 放置的范围
+    // 放置的方块
+    public BlockDefinition placeBlock;
+    // 放置的范围
+    public float interactRange = 5f;
+
+    [Header("Breaking")]
+    [Tooltip("Hardness 为 1 的方块，挖掘需要的基础秒数")]
+    public float baseBreakTime = 0.75f;
 
     private VoxelWorld voxelWorld;
+
+    // 当前正在被玩家按住左键挖掘的方块
+    private Block breakingBlock;
+
+    // 已经挖掘了多久
+    private float currentBreakTime;
 
     private void Awake()
     {
@@ -714,7 +755,7 @@ public class BlockInteraction : MonoBehaviour
             cameraModeController = playerCamera.GetComponent<CameraModeController>();
         }
 
-        // 从 World 物体获取 VoxelWorld，用它统一创建方块
+        // 从 World 物体获取 VoxelWorld，用它统一创建方块和掉落物
         if (worldRoot != null)
         {
             voxelWorld = worldRoot.GetComponent<VoxelWorld>();
@@ -723,16 +764,33 @@ public class BlockInteraction : MonoBehaviour
 
     private void Update()
     {
-        // 鼠标左键破坏方块
-        if (Input.GetMouseButtonDown(0))
-        {
-            TryBreakBlock();
-        }
+        UpdateBreakingInput();
 
         // 鼠标右键放置方块
         if (Input.GetMouseButtonDown(1))
         {
             TryPlaceBlock();
+        }
+    }
+
+    private void UpdateBreakingInput()
+    {
+        // 左键刚按下：开始尝试挖掘
+        if (Input.GetMouseButtonDown(0))
+        {
+            BeginBreakingBlock();
+        }
+
+        // 左键持续按住：累计挖掘时间
+        if (Input.GetMouseButton(0))
+        {
+            ContinueBreakingBlock();
+        }
+
+        // 松开左键：取消本次挖掘
+        if (Input.GetMouseButtonUp(0))
+        {
+            CancelBreakingBlock();
         }
     }
 
@@ -759,7 +817,6 @@ public class BlockInteraction : MonoBehaviour
             ray = playerCamera.ScreenPointToRay(Input.mousePosition);
         }
 
-        // 射线没有击中任何物体
         if (!Physics.Raycast(ray, out hit, 100f))
         {
             return false;
@@ -773,7 +830,7 @@ public class BlockInteraction : MonoBehaviour
             return false;
         }
 
-        // 只允许操作 World 下的方块
+        // 只允许操作 World 下的普通方块
         if (worldRoot != null && hit.collider.transform.parent != worldRoot)
         {
             return false;
@@ -793,9 +850,11 @@ public class BlockInteraction : MonoBehaviour
         return true;
     }
 
-    // 摧毁目标方块
-    private void TryBreakBlock()
+    // 左键按下时，记录最开始挖掘的方块
+    private void BeginBreakingBlock()
     {
+        CancelBreakingBlock();
+
         if (!TryGetTargetBlock(out RaycastHit hit))
         {
             return;
@@ -803,15 +862,93 @@ public class BlockInteraction : MonoBehaviour
 
         Block targetBlock = hit.collider.GetComponent<Block>();
 
-        // 未来基岩等方块可设为不可破坏
-        if (targetBlock != null &&
-            targetBlock.Definition != null &&
-            !targetBlock.Definition.isBreakable)
+        if (targetBlock == null || targetBlock.Definition == null)
         {
             return;
         }
 
-        Destroy(hit.collider.gameObject);
+        // 不可破坏方块，例如未来的基岩，不能开始挖掘
+        if (!targetBlock.Definition.isBreakable)
+        {
+            return;
+        }
+
+        breakingBlock = targetBlock;
+        currentBreakTime = 0f;
+    }
+
+    // 左键持续按住时执行
+    private void ContinueBreakingBlock()
+    {
+        if (breakingBlock == null)
+        {
+            return;
+        }
+
+        // 玩家必须始终看着同一块方块。
+        // 视线移开、距离过远、改挖别的方块，都会取消本次挖掘。
+        if (!TryGetTargetBlock(out RaycastHit hit))
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        Block currentTarget = hit.collider.GetComponent<Block>();
+
+        if (currentTarget != breakingBlock)
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        BlockDefinition definition = breakingBlock.Definition;
+
+        if (definition == null || !definition.isBreakable)
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        // Hardness 越大，所需挖掘时间越长。
+        // Mathf.Max 防止有人把硬度设置成 0 或负数。
+        float requiredBreakTime = baseBreakTime * Mathf.Max(0.05f, definition.hardness);
+
+        currentBreakTime += Time.deltaTime;
+
+        if (currentBreakTime >= requiredBreakTime)
+        {
+            BreakCurrentBlock();
+        }
+    }
+
+    // 真正摧毁方块，并生成对应类型的掉落物
+    private void BreakCurrentBlock()
+    {
+        if (breakingBlock == null)
+        {
+            return;
+        }
+
+        BlockDefinition definition = breakingBlock.Definition;
+        Vector3 blockPosition = breakingBlock.transform.position;
+
+        // 先生成掉落物，再销毁原方块。
+        // 掉落物会从原方块附近出现，并自动落到下方方块上。
+        if (voxelWorld != null && definition != null)
+        {
+            voxelWorld.SpawnBlockDrop(blockPosition, definition);
+        }
+
+        Destroy(breakingBlock.gameObject);
+
+        CancelBreakingBlock();
+    }
+
+    // 松开鼠标、视线移开或目标变化时，重置挖掘进度
+    private void CancelBreakingBlock()
+    {
+        breakingBlock = null;
+        currentBreakTime = 0f;
     }
 
     // 放置当前选择的方块
@@ -844,7 +981,7 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // 通过 VoxelWorld 创建方块，确保所有方块都有 Block 类型资料
+        // 通过 VoxelWorld 创建正常方块
         if (voxelWorld != null)
         {
             voxelWorld.CreateBlock(gridPosition, placeBlock);
@@ -862,14 +999,169 @@ public class BlockInteraction : MonoBehaviour
 
 
 
+## 方块掉落
+
+在 `Assets/Scripts` 新建 `BlockDrop.cs`
+
+```c#
+using UnityEngine;
+
+// 方块掉落
+// 待实现：以后制作背包时，在这里继续添加“靠近玩家自动拾取”的功能。
+public class BlockDrop : MonoBehaviour
+{
+    [Header("Drop Data")]
+    [SerializeField] private BlockDefinition definition;
+
+    [Header("Visual")]
+    public float dropScale = 0.35f;
+    public float floatingHeight = 0.08f;
+    public float floatingSpeed = 2.5f;
+    public float rotationSpeed = 70f;
+
+    [Header("Fall")]
+    public float fallSpeed = 5f;
+    public float groundCheckPadding = 0.03f;
+
+    private bool hasLanded;
+    private Vector3 restingPosition;
+    private float floatingOffset;
+
+    // 掉落物代表的原始方块类型。
+    // 以后背包拾取时，可以通过它知道拾取的是草、泥土还是石头。
+    public BlockDefinition Definition => definition;
+
+    public void Initialize(BlockDefinition blockDefinition)
+    {
+        definition = blockDefinition;
+
+        // 掉落物缩小为普通方块的 35%
+        transform.localScale = Vector3.one * dropScale;
+
+        // 让每个掉落物的初始角度略有不同，看起来更自然
+        transform.rotation = Random.rotation;
+
+        floatingOffset = Random.Range(0f, Mathf.PI * 2f);
+
+        Renderer dropRenderer = GetComponent<Renderer>();
+
+        if (dropRenderer != null && definition != null && definition.material != null)
+        {
+            // 使用原方块的材质，因此草会掉草方块，石头会掉石头
+            dropRenderer.sharedMaterial = definition.material;
+        }
+
+        // 掉落物暂时不需要实体碰撞。
+        // 这样它不会挡住玩家，也不会阻止后续放置方块。
+        Collider dropCollider = GetComponent<Collider>();
+
+        if (dropCollider != null)
+        {
+            dropCollider.enabled = false;
+        }
+
+        string blockName = definition != null ? definition.displayName : "未知方块";
+        gameObject.name = $"掉落物 - {blockName}";
+    }
+
+    private void Update()
+    {
+        if (!hasLanded)
+        {
+            FallToGround();
+            return;
+        }
+
+        FloatAndRotate();
+    }
+
+    private void FallToGround()
+    {
+        float halfDropHeight = transform.localScale.y * 0.5f;
+        float fallDistance = fallSpeed * Time.deltaTime + halfDropHeight + groundCheckPadding;
+
+        if (TryGetGroundBelow(fallDistance, out RaycastHit groundHit))
+        {
+            // 掉落物中心停在地面上方，避免模型嵌进方块。
+            restingPosition = new Vector3(
+                transform.position.x,
+                groundHit.point.y + halfDropHeight,
+                transform.position.z
+            );
+
+            transform.position = restingPosition;
+            hasLanded = true;
+            return;
+        }
+
+        // 下方暂时没有方块，继续下落
+        transform.position += Vector3.down * fallSpeed * Time.deltaTime;
+    }
+
+    private bool TryGetGroundBelow(float checkDistance, out RaycastHit closestGround)
+    {
+        closestGround = default;
+        float closestDistance = float.MaxValue;
+
+        RaycastHit[] hits = Physics.RaycastAll(
+            transform.position,
+            Vector3.down,
+            checkDistance
+        );
+
+        foreach (RaycastHit hit in hits)
+        {
+            // 只把真正带 Block 组件的物体视为地面。
+            // 玩家、相机、未来的怪物等不会让掉落物停住。
+            Block block = hit.collider.GetComponent<Block>();
+
+            if (block == null)
+            {
+                continue;
+            }
+
+            if (hit.distance < closestDistance)
+            {
+                closestDistance = hit.distance;
+                closestGround = hit;
+            }
+        }
+
+        return closestDistance != float.MaxValue;
+    }
+
+    private void FloatAndRotate()
+    {
+        float floatingY = Mathf.Sin(
+            Time.time * floatingSpeed + floatingOffset
+        ) * floatingHeight;
+
+        transform.position = restingPosition + Vector3.up * floatingY;
+
+        transform.Rotate(
+            Vector3.up,
+            rotationSpeed * Time.deltaTime,
+            Space.World
+        );
+    }
+}
+```
+
+
+
 # 当前需求
 
 ## 物品栏/背包/方块掉落
 
+不同种类方块破坏需要不同的时间，然后mc同款方块掉落效果，方块被破坏时，变小，悬浮在地面上已实现
+
+
+
 mc同款物品栏，屏幕下方有10个物品栏，前9个是放物品的，第10个是省略号，点击省略号进入背包
 
-mc同款方块掉落效果，方块被破坏时，变小，悬浮在地面上
-
-
-
 当前代码右键放置的是草方块。背包系统完成后，只要把当前选中物品对应的 `BlockDefinition` 赋给 `placeBlock`，就能放置泥土、石头、木头或其他任何方块。
+
+要详细的步骤告诉我怎么做，至少像我文档那样详细。最后给出可以直接复制的完整代码
+
+【注意不要动我的代码，告诉我怎么做，我自己改】
+
