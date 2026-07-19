@@ -115,17 +115,17 @@ public class BlockDefinition : ScriptableObject
     public string displayName = "新方块";
 
     [Header("Appearance")]
-    // 该方块使用的材质
+    // 材质
     public Material material;
 
     [Header("Gameplay")]
-    // 是否有实体碰撞，例如空气、水未来可以设为 false
+    // 是否有实体碰撞
     public bool isSolid = true;
 
     // 是否允许被破坏
     public bool isBreakable = true;
 
-    // 破坏硬度。未来可配合镐子、斧头和挖掘时间使用
+    // 硬度
     public float hardness = 1f;
 }
 ```
@@ -153,12 +153,10 @@ public class BlockDefinition : ScriptableObject
 ```c#
 using UnityEngine;
 
-// 每一个实际生成到场景里的方块，都会挂上这个组件
 public class Block : MonoBehaviour
 {
     [Header("Block Data")]
     [SerializeField] private BlockDefinition definition;
-
     public BlockDefinition Definition => definition;
 
     // 初始化方块
@@ -168,7 +166,6 @@ public class Block : MonoBehaviour
         ApplyDefinition();
     }
 
-    // 根据方块资料，应用材质与碰撞体设置
     private void ApplyDefinition()
     {
         if (definition == null)
@@ -184,7 +181,7 @@ public class Block : MonoBehaviour
             blockRenderer.material = definition.material;
         }
 
-        // 根据方块资料决定是否启用碰撞体
+        // 是否启用碰撞体
         Collider blockCollider = GetComponent<Collider>();
 
         if (blockCollider != null)
@@ -192,7 +189,7 @@ public class Block : MonoBehaviour
             blockCollider.enabled = definition.isSolid;
         }
 
-        // 场景中显示的物体名称更清楚，例如：GrassBlock (草方块)
+        // 场景中显示的物体名称更清楚【例如：GrassBlock (草方块)】
         gameObject.name = $"{definition.name} ({definition.displayName})";
     }
 }
@@ -218,7 +215,6 @@ public class VoxelWorld : MonoBehaviour
     public float noiseScale = 12f;
 
     [Header("Block Types")]
-    // 不再直接引用材质，而是引用真正的方块定义
     public BlockDefinition grassBlock;
     public BlockDefinition dirtBlock;
     public BlockDefinition stoneBlock;
@@ -269,19 +265,16 @@ public class VoxelWorld : MonoBehaviour
         CreateBlock(new Vector3Int(x, y, z), blockToCreate);
     }
 
-    // 创建一个真正具有方块定义的方块
+    // 创建方块
     public GameObject CreateBlock(Vector3Int blockPosition, BlockDefinition blockDefinition)
     {
-        // 没有方块资料时不生成，避免产生没有类型的 Cube
         if (blockDefinition == null)
         {
             return null;
         }
 
-        // 创建 Unity Cube，Cube 自带 Mesh Renderer 和 Box Collider
+        // 创建 Unity Cube【Cube 自带 Mesh Renderer 和 Box Collider】
         GameObject blockObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-
-        // Vector3Int 保证方块始终对齐整数网格
         blockObject.transform.position = blockPosition;
 
         // 所有方块都放到 World 下
@@ -435,6 +428,65 @@ public class PlayerController : MonoBehaviour
 
 
 
+## 第一人称的准星
+
+在Hierarchy空白处右键 -> 选择UI(Canvas) -> 选择Canvas
+
+Hierarchy中会变成：
+
+- Canvas
+- EventSystem（自动生成的，不能删）
+
+
+
+选中Hierarchy中创建的Canvas，Inspector里面找到Canvas组件。检查如下选项，保证为：
+
+- Render Mode选项：选择Screen Space - Overlay【含义：UI画在整个游戏画面的最上层】
+
+Inspector里面找到Canvas Scaler组件。检查如下选项，保证为：
+
+- UI Scale Mode选项：选择Scale With Screen Size【含义：自动按屏幕大小缩放UI】
+- Reference Resolution选项：x 1920   y 1080
+- Screen Match Mode选项：选择Match Width Or Height
+- Match选项：选择0.5
+
+
+
+右键Hierarchy中创建的Canvas -> 选择UI(Canvas) -> 选择Image，重命名为Crosshair
+
+最终Hierarchy应该变成：
+
+- Canvas
+  - Crosshair
+- EventSystem
+
+选中Hierarchy中Canvas下的Crosshair，Inspector里面找到Rect Transform组件：
+
+- Anchor Presets选项【位于左上方的方块】：选择Middle Center
+- width、height：100 100
+
+
+
+Assets目录下新建Sprites目录，Sprites目录导进去Crosshair.png
+
+<img src="README.assets/Crosshair.png" style="zoom: 25%;" />
+
+选中Crosshair.png，Inspector里面，找到Texture Type选项，选择Sprite (2D and UI)
+
+找到Sprite Mode选项，选择Single，然后点击Apply。
+
+
+
+然后引用图片：点击Hierarchy中Canvas下的Crosshair，Inspector里面找到Image组件：
+
+Source Image选项：把Crosshair.png拖进去
+
+Image Type选项：Simple
+
+Image Type选项下的Preserve Aspect：勾选
+
+
+
 
 ## 视角
 
@@ -482,6 +534,9 @@ public class CameraModeController : MonoBehaviour
 
     [Header("First Person")]
     public Vector3 firstPersonOffset = new Vector3(0f, 0.75f, 0f);
+
+    [Header("UI")]
+    public GameObject crosshair;
     public float mouseSensitivity = 2.5f;   // 鼠标灵敏度
     public float minPitch = -80f;   // 第一人称允许向上下看的最大角度
     public float maxPitch = 80f;
@@ -559,11 +614,21 @@ public class CameraModeController : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             // 第一人称隐藏鼠标
             Cursor.visible = false;
+
+            if (crosshair != null)
+            {
+                crosshair.SetActive(true);
+            }
         }
         else
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+
+            if (crosshair != null)
+            {
+                crosshair.SetActive(false);
+            }
         }
     }
 
@@ -606,6 +671,7 @@ public class CameraModeController : MonoBehaviour
 
 1. 把 `CameraModeController.cs` 拖到 `Main Camera` 上
 2. 把 Hierarchy 里的 `Player` 拖到 `Target`字段
+3. 把 Hierarchy 里`Canvas`下的`Crosshair`拖到`Crosshair`字段
 
 
 
@@ -793,114 +859,6 @@ public class BlockInteraction : MonoBehaviour
 2. 把 `World` 拖到 `World Root`字段
 4. 把 `Main Camera` 拖到  `Camera Mode Controller `字段
 4. 把 `Assets/Blocks/GrassBlock`拖到 `Place Block`字段
-
-
-
-## 第一人称的准星
-
-在Hierarchy空白处右键 -> 选择UI(Canvas) -> 选择Canvas
-
-Hierarchy中会变成：
-
-- Canvas
-- EventSystem（自动生成的，不能删）
-
-
-
-选中Hierarchy中创建的Canvas，Inspector里面找到Canvas组件。检查如下选项，保证为：
-
-- Render Mode选项：选择Screen Space - Overlay【含义：UI画在整个游戏画面的最上层】
-
-Inspector里面找到Canvas Scaler组件。检查如下选项，保证为：
-
-- UI Scale Mode选项：选择Scale With Screen Size【含义：自动按屏幕大小缩放UI】
-- Reference Resolution选项：x 1920   y 1080
-- Screen Match Mode选项：选择Match Width Or Height
-- Match选项：选择0.5
-
-
-
-右键Hierarchy中创建的Canvas -> 选择UI(Canvas) -> 选择Image，重命名为Crosshair
-
-最终Hierarchy应该变成：
-
-- Canvas
-  - Crosshair
-- EventSystem
-
-选中Hierarchy中Canvas下的Crosshair，Inspector里面找到Rect Transform组件：
-
-- Anchor Presets选项【位于左上方的方块】：选择Middle Center
-- width、height：100 100
-
-
-
-Assets目录下新建Sprites目录，Sprites目录导进去Crosshair.png
-
-<img src="README.assets/Crosshair.png" style="zoom: 25%;" />
-
-选中Crosshair.png，Inspector里面，找到Texture Type选项，选择Sprite (2D and UI)
-
-找到Sprite Mode选项，选择Single，然后点击Apply。
-
-
-
-然后引用图片：点击Hierarchy中Canvas下的Crosshair，Inspector里面找到Image组件：
-
-Source Image选项：把Crosshair.png拖进去
-
-Image Type选项：Simple
-
-Image Type选项下的Preserve Aspect：勾选
-
-
-
-修改 CameraModeController.cs
-
-```c#
-[Header("First Person")]
-public Vector3 firstPersonOffset = new Vector3(0f, 0.75f, 0f);
-
-// ===============以下是新增代码=================
-[Header("UI")]
-public GameObject crosshair;
-// ===============以上是新增代码=================
-
-public float mouseSensitivity = 2.5f;
-```
-
-```c#
-
-private void ApplyCursorState()
-{
-    if (IsFirstPerson)
-    {
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
-
-        // ===============以下是新增代码=================
-        if (crosshair != null)
-        {
-            crosshair.SetActive(true);
-        }
-        // ===============以上是新增代码=================
-    }
-    else
-    {
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-
-        // ===============以下是新增代码=================
-        if (crosshair != null)
-        {
-            crosshair.SetActive(false);
-        }
-        // ===============以上是新增代码=================
-    }
-}
-```
-
-选中Hierarchy中Main Camera，Inspector里面Camera Mode Controller组件会多出来Crosshair，把Hierarchy里面Canvas下的Crosshair拖进去
 
 
 

@@ -8,16 +8,16 @@ public class BlockDefinition : ScriptableObject
     public string displayName = "新方块";
 
     [Header("Appearance")]
-    // 该方块使用的材质
+    // 材质
     public Material material;
 
     [Header("Gameplay")]
-    // 是否有实体碰撞，例如空气、水未来可以设为 false
+    // 是否有实体碰撞
     public bool isSolid = true;
 
     // 是否允许被破坏
     public bool isBreakable = true;
 
-    // 破坏硬度。未来可配合镐子、斧头和挖掘时间使用
+    // 硬度
     public float hardness = 1f;
 }
