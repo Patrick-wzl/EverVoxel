@@ -740,12 +740,19 @@ public class CameraModeController : MonoBehaviour
 
 ```c#
 using UnityEngine;
+using UnityEngine.EventSystems;
 
+// 玩家与方块交互系统
+// 1. 挖掘方块
+// 2. 放置方块
+// 3. 根据方块硬度计算挖掘时间
+// 4. 与背包系统同步物品数量
 public class BlockInteraction : MonoBehaviour
 {
     [Header("References")]
     public Camera playerCamera;
     public Transform worldRoot;
+    // 用于判断当前是第一人称还是第三人称
     public CameraModeController cameraModeController;
 
     [Header("Placement")]
@@ -755,15 +762,14 @@ public class BlockInteraction : MonoBehaviour
     public float interactRange = 5f;
 
     [Header("Breaking")]
-    [Tooltip("Hardness 为 1 的方块，挖掘需要的基础秒数")]
+    // 最终挖掘时间 = baseBreakTime * hardness
     public float baseBreakTime = 0.75f;
 
     private VoxelWorld voxelWorld;
-
+    private PlayerInventory inventory;
     // 当前正在被玩家按住左键挖掘的方块
     private Block breakingBlock;
-
-    // 已经挖掘了多久
+    // 当前已经挖掘的时间
     private float currentBreakTime;
 
     private void Awake()
@@ -775,68 +781,82 @@ public class BlockInteraction : MonoBehaviour
 
         if (cameraModeController == null && playerCamera != null)
         {
-            cameraModeController = playerCamera.GetComponent<CameraModeController>();
+            cameraModeController =
+                playerCamera.GetComponent<CameraModeController>();
         }
 
-        // 从 World 物体获取 VoxelWorld，用它统一创建方块和掉落物
         if (worldRoot != null)
         {
             voxelWorld = worldRoot.GetComponent<VoxelWorld>();
         }
+
+        inventory = GetComponent<PlayerInventory>();
     }
 
     private void Update()
     {
-        UpdateBreakingInput();
+        // 打开背包时禁止操作世界
+        if (InventoryUI.IsAnyInventoryOpen)
+        {
+            CancelBreakingBlock();
+            return;
+        }
 
-        // 鼠标右键放置方块
+        // 鼠标位于UI上时，不响应方块操作
+        if (EventSystem.current != null &&
+            EventSystem.current.IsPointerOverGameObject())
+        {
+            CancelBreakingBlock();
+            return;
+        }
+
+        // 左键挖掘方块
+        if (Input.GetMouseButtonDown(0))
+        {
+            BeginBreakingBlock();
+        }
+
+        // 持续挖掘
+        if (Input.GetMouseButton(0))
+        {
+            ContinueBreakingBlock();
+        }
+
+        // 松开左键取消挖掘
+        if (Input.GetMouseButtonUp(0))
+        {
+            CancelBreakingBlock();
+        }
+
+        // 右键放置方块
         if (Input.GetMouseButtonDown(1))
         {
             TryPlaceBlock();
         }
     }
 
-    private void UpdateBreakingInput()
-    {
-        // 左键刚按下：开始尝试挖掘
-        if (Input.GetMouseButtonDown(0))
-        {
-            BeginBreakingBlock();
-        }
-
-        // 左键持续按住：累计挖掘时间
-        if (Input.GetMouseButton(0))
-        {
-            ContinueBreakingBlock();
-        }
-
-        // 松开左键：取消本次挖掘
-        if (Input.GetMouseButtonUp(0))
-        {
-            CancelBreakingBlock();
-        }
-    }
-
+    // 获取玩家当前瞄准的方块
+    // 第一人称：从屏幕中心发射射线
+    // 第三人称：从鼠标位置发射射线
     private bool TryGetTargetBlock(out RaycastHit hit)
     {
         hit = default;
 
         Ray ray;
 
-        // 第一人称：从屏幕中心，也就是准星位置发射射线
-        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        if (cameraModeController != null &&
+            cameraModeController.IsFirstPerson)
         {
-            Vector3 screenCenter = new Vector3(
-                Screen.width * 0.5f,
-                Screen.height * 0.5f,
-                0f
+            ray = playerCamera.ScreenPointToRay(
+                new Vector3(
+                    Screen.width * 0.5f,
+                    Screen.height * 0.5f,
+                    0f
+                )
             );
-
-            ray = playerCamera.ScreenPointToRay(screenCenter);
         }
         else
         {
-            // 第三人称：从鼠标所在位置发射射线
             ray = playerCamera.ScreenPointToRay(Input.mousePosition);
         }
 
@@ -845,7 +865,7 @@ public class BlockInteraction : MonoBehaviour
             return false;
         }
 
-        // 必须击中真正带 Block 组件的物体
+        // 只有带Block组件的对象才是真正方块
         Block targetBlock = hit.collider.GetComponent<Block>();
 
         if (targetBlock == null)
@@ -853,27 +873,23 @@ public class BlockInteraction : MonoBehaviour
             return false;
         }
 
-        // 只允许操作 World 下的普通方块
-        if (worldRoot != null && hit.collider.transform.parent != worldRoot)
+        // 只允许操作World下的方块
+        if (worldRoot != null &&
+            hit.collider.transform.parent != worldRoot)
         {
             return false;
         }
 
-        // 检查玩家与目标方块的距离
-        float distanceToPlayer = Vector3.Distance(
+        // 检查玩家距离
+        return Vector3.Distance(
             transform.position,
             hit.collider.transform.position
-        );
-
-        if (distanceToPlayer > interactRange)
-        {
-            return false;
-        }
-
-        return true;
+        ) <= interactRange;
     }
 
-    // 左键按下时，记录最开始挖掘的方块
+    // 开始挖掘方块
+    // 左键第一次按下时调用
+    // 保存当前目标方块
     private void BeginBreakingBlock()
     {
         CancelBreakingBlock();
@@ -885,22 +901,18 @@ public class BlockInteraction : MonoBehaviour
 
         Block targetBlock = hit.collider.GetComponent<Block>();
 
-        if (targetBlock == null || targetBlock.Definition == null)
-        {
-            return;
-        }
-
-        // 不可破坏方块，例如未来的基岩，不能开始挖掘
-        if (!targetBlock.Definition.isBreakable)
+        if (targetBlock == null ||
+            targetBlock.Definition == null ||
+            !targetBlock.Definition.isBreakable)
         {
             return;
         }
 
         breakingBlock = targetBlock;
-        currentBreakTime = 0f;
     }
-
-    // 左键持续按住时执行
+    // 持续挖掘方块
+    // 玩家需要持续看向同一个方块
+    // 根据hardness判断是否达到破坏时间
     private void ContinueBreakingBlock()
     {
         if (breakingBlock == null)
@@ -908,17 +920,8 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // 玩家必须始终看着同一块方块。
-        // 视线移开、距离过远、改挖别的方块，都会取消本次挖掘。
-        if (!TryGetTargetBlock(out RaycastHit hit))
-        {
-            CancelBreakingBlock();
-            return;
-        }
-
-        Block currentTarget = hit.collider.GetComponent<Block>();
-
-        if (currentTarget != breakingBlock)
+        if (!TryGetTargetBlock(out RaycastHit hit) ||
+            hit.collider.GetComponent<Block>() != breakingBlock)
         {
             CancelBreakingBlock();
             return;
@@ -932,42 +935,31 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // Hardness 越大，所需挖掘时间越长。
-        // Mathf.Max 防止有人把硬度设置成 0 或负数。
-        float requiredBreakTime = baseBreakTime * Mathf.Max(0.05f, definition.hardness);
+        // hardness越高，需要挖掘时间越长
+        float breakTime =
+            baseBreakTime * Mathf.Max(0.05f, definition.hardness);
 
         currentBreakTime += Time.deltaTime;
 
-        if (currentBreakTime >= requiredBreakTime)
+        if (currentBreakTime >= breakTime)
         {
-            BreakCurrentBlock();
+            Vector3 position = breakingBlock.transform.position;
+            // 生成掉落物
+            if (voxelWorld != null)
+            {
+                voxelWorld.SpawnBlockDrop(position, definition);
+            }
+            // 删除原方块
+            Destroy(breakingBlock.gameObject);
+            CancelBreakingBlock();
         }
     }
 
-    // 真正摧毁方块，并生成对应类型的掉落物
-    private void BreakCurrentBlock()
-    {
-        if (breakingBlock == null)
-        {
-            return;
-        }
-
-        BlockDefinition definition = breakingBlock.Definition;
-        Vector3 blockPosition = breakingBlock.transform.position;
-
-        // 先生成掉落物，再销毁原方块。
-        // 掉落物会从原方块附近出现，并自动落到下方方块上。
-        if (voxelWorld != null && definition != null)
-        {
-            voxelWorld.SpawnBlockDrop(blockPosition, definition);
-        }
-
-        Destroy(breakingBlock.gameObject);
-
-        CancelBreakingBlock();
-    }
-
-    // 松开鼠标、视线移开或目标变化时，重置挖掘进度
+    // 取消当前挖掘状态
+    // 用于：
+    // 1. 松开鼠标
+    // 2. 改变目标方块
+    // 3. 打开背包
     private void CancelBreakingBlock()
     {
         breakingBlock = null;
@@ -975,39 +967,49 @@ public class BlockInteraction : MonoBehaviour
     }
 
     // 放置当前选择的方块
+    // 创建成功后：
+    // 消耗背包中的一个物品
     private void TryPlaceBlock()
     {
-        if (!TryGetTargetBlock(out RaycastHit hit))
+        if (inventory != null && !inventory.HasSelectedItem())
         {
             return;
         }
 
-        // 没有指定要放什么方块时，不执行放置
-        if (placeBlock == null)
+        if (placeBlock == null || !TryGetTargetBlock(out RaycastHit hit))
         {
             return;
         }
 
-        // 根据点击面的法线，获得相邻格子的位置
+        // 根据点击面的方向计算放置位置
         Vector3 placePosition = hit.collider.transform.position + hit.normal;
 
-        // 转为整数格子坐标，确保方块不偏移
+        // 转换为整数坐标
         Vector3Int gridPosition = new Vector3Int(
             Mathf.RoundToInt(placePosition.x),
             Mathf.RoundToInt(placePosition.y),
             Mathf.RoundToInt(placePosition.z)
         );
 
-        // 新位置已有碰撞体时，不允许重叠放置
+        // 防止方块重叠
         if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
         {
             return;
         }
 
-        // 通过 VoxelWorld 创建正常方块
-        if (voxelWorld != null)
+        if (voxelWorld == null)
         {
+            return;
+        }
+
+        // 创建方块
+        GameObject createdBlock =
             voxelWorld.CreateBlock(gridPosition, placeBlock);
+
+        // 放置成功后消耗物品
+        if (createdBlock != null && inventory != null)
+        {
+            inventory.ConsumeSelectedItem();
         }
     }
 }
@@ -1248,7 +1250,7 @@ public class BlockDrop : MonoBehaviour
 
 ## 物品栏/背包
 
-### 1、在 `Assets/Scripts` 新建 `PlayerInventory.cs`
+在 `Assets/Scripts` 新建 `PlayerInventory.cs`
 
 ```c#
 using System;
@@ -1582,244 +1584,7 @@ public class PlayerInventory : MonoBehaviour
 }
 ```
 
-### 2、替换`BlockInteraction.cs`
-
-```c#
-using UnityEngine;
-using UnityEngine.EventSystems;
-
-public class BlockInteraction : MonoBehaviour
-{
-    [Header("References")]
-    public Camera playerCamera;
-    public Transform worldRoot;
-    public CameraModeController cameraModeController;
-
-    [Header("Placement")]
-    public BlockDefinition placeBlock;
-    public float interactRange = 5f;
-
-    [Header("Breaking")]
-    public float baseBreakTime = 0.75f;
-
-    private VoxelWorld voxelWorld;
-    private PlayerInventory inventory;
-    private Block breakingBlock;
-    private float currentBreakTime;
-
-    private void Awake()
-    {
-        if (playerCamera == null)
-        {
-            playerCamera = Camera.main;
-        }
-
-        if (cameraModeController == null && playerCamera != null)
-        {
-            cameraModeController =
-                playerCamera.GetComponent<CameraModeController>();
-        }
-
-        if (worldRoot != null)
-        {
-            voxelWorld = worldRoot.GetComponent<VoxelWorld>();
-        }
-
-        inventory = GetComponent<PlayerInventory>();
-    }
-
-    private void Update()
-    {
-        if (InventoryUI.IsAnyInventoryOpen)
-        {
-            CancelBreakingBlock();
-            return;
-        }
-
-        if (EventSystem.current != null &&
-            EventSystem.current.IsPointerOverGameObject())
-        {
-            CancelBreakingBlock();
-            return;
-        }
-
-        if (Input.GetMouseButtonDown(0))
-        {
-            BeginBreakingBlock();
-        }
-
-        if (Input.GetMouseButton(0))
-        {
-            ContinueBreakingBlock();
-        }
-
-        if (Input.GetMouseButtonUp(0))
-        {
-            CancelBreakingBlock();
-        }
-
-        if (Input.GetMouseButtonDown(1))
-        {
-            TryPlaceBlock();
-        }
-    }
-
-    private bool TryGetTargetBlock(out RaycastHit hit)
-    {
-        hit = default;
-
-        Ray ray;
-
-        if (cameraModeController != null &&
-            cameraModeController.IsFirstPerson)
-        {
-            ray = playerCamera.ScreenPointToRay(
-                new Vector3(
-                    Screen.width * 0.5f,
-                    Screen.height * 0.5f,
-                    0f
-                )
-            );
-        }
-        else
-        {
-            ray = playerCamera.ScreenPointToRay(Input.mousePosition);
-        }
-
-        if (!Physics.Raycast(ray, out hit, 100f))
-        {
-            return false;
-        }
-
-        Block targetBlock = hit.collider.GetComponent<Block>();
-
-        if (targetBlock == null)
-        {
-            return false;
-        }
-
-        if (worldRoot != null &&
-            hit.collider.transform.parent != worldRoot)
-        {
-            return false;
-        }
-
-        return Vector3.Distance(
-            transform.position,
-            hit.collider.transform.position
-        ) <= interactRange;
-    }
-
-    private void BeginBreakingBlock()
-    {
-        CancelBreakingBlock();
-
-        if (!TryGetTargetBlock(out RaycastHit hit))
-        {
-            return;
-        }
-
-        Block targetBlock = hit.collider.GetComponent<Block>();
-
-        if (targetBlock == null ||
-            targetBlock.Definition == null ||
-            !targetBlock.Definition.isBreakable)
-        {
-            return;
-        }
-
-        breakingBlock = targetBlock;
-    }
-
-    private void ContinueBreakingBlock()
-    {
-        if (breakingBlock == null)
-        {
-            return;
-        }
-
-        if (!TryGetTargetBlock(out RaycastHit hit) ||
-            hit.collider.GetComponent<Block>() != breakingBlock)
-        {
-            CancelBreakingBlock();
-            return;
-        }
-
-        BlockDefinition definition = breakingBlock.Definition;
-
-        if (definition == null || !definition.isBreakable)
-        {
-            CancelBreakingBlock();
-            return;
-        }
-
-        float breakTime =
-            baseBreakTime * Mathf.Max(0.05f, definition.hardness);
-
-        currentBreakTime += Time.deltaTime;
-
-        if (currentBreakTime >= breakTime)
-        {
-            Vector3 position = breakingBlock.transform.position;
-
-            if (voxelWorld != null)
-            {
-                voxelWorld.SpawnBlockDrop(position, definition);
-            }
-
-            Destroy(breakingBlock.gameObject);
-            CancelBreakingBlock();
-        }
-    }
-
-    private void CancelBreakingBlock()
-    {
-        breakingBlock = null;
-        currentBreakTime = 0f;
-    }
-
-    private void TryPlaceBlock()
-    {
-        if (inventory != null && !inventory.HasSelectedItem())
-        {
-            return;
-        }
-
-        if (placeBlock == null || !TryGetTargetBlock(out RaycastHit hit))
-        {
-            return;
-        }
-
-        Vector3 placePosition = hit.collider.transform.position + hit.normal;
-
-        Vector3Int gridPosition = new Vector3Int(
-            Mathf.RoundToInt(placePosition.x),
-            Mathf.RoundToInt(placePosition.y),
-            Mathf.RoundToInt(placePosition.z)
-        );
-
-        if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
-        {
-            return;
-        }
-
-        if (voxelWorld == null)
-        {
-            return;
-        }
-
-        GameObject createdBlock =
-            voxelWorld.CreateBlock(gridPosition, placeBlock);
-
-        if (createdBlock != null && inventory != null)
-        {
-            inventory.ConsumeSelectedItem();
-        }
-    }
-}
-```
-
-### 3、在 `Assets/Scripts` 新建 `InventoryUI.cs`
+在 `Assets/Scripts` 新建 `InventoryUI.cs`
 
 ```c#
 using System.Collections.Generic;
@@ -2367,8 +2132,6 @@ public class InventoryUI : MonoBehaviour
 }
 ```
 
-### 4、在 Unity 中挂载组件
-
 给 Hierarchy 中的 Player 添加组件：
 
 ```
@@ -2394,6 +2157,10 @@ Add Component > InventoryUI
 # 当前需求
 
 实现人物血量，人物有100滴血，和我的世界地下城同款效果，一个心形容器，里面红色的是生命值
+
+人物有护甲值，默认为0
+
+人物有魔抗值，默认为0
 
 
 
