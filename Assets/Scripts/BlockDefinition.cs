@@ -10,6 +10,7 @@ public class BlockDefinition : ScriptableObject
     [Header("Appearance")]
     // 材质
     public Material material;
+    public Sprite itemIcon;
 
     [Header("Gameplay")]
     // 是否有实体碰撞

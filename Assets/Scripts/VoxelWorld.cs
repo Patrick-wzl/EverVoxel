@@ -84,4 +84,32 @@ public class VoxelWorld : MonoBehaviour
 
         return blockObject;
     }
+
+    // 创建方块掉落物
+    public GameObject SpawnBlockDrop(Vector3 worldPosition, BlockDefinition blockDefinition)
+    {
+        if (blockDefinition == null)
+        {
+            return null;
+        }
+
+        GameObject dropObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+
+        // 让掉落物从被破坏方块稍微上方出现。
+        // X/Z 有轻微随机偏移，多个方块掉落时不会完全重叠。
+        Vector3 randomOffset = new Vector3(
+            Random.Range(-0.18f, 0.18f),
+            0.65f,
+            Random.Range(-0.18f, 0.18f)
+        );
+
+        dropObject.transform.position = worldPosition + randomOffset;
+        dropObject.transform.parent = transform;
+
+        // 掉落物不添加 Block 组件。因此玩家不能把掉落物再次当成世界方块挖掉。
+        BlockDrop blockDrop = dropObject.AddComponent<BlockDrop>();
+        blockDrop.Initialize(blockDefinition);
+
+        return dropObject;
+    }
 }
