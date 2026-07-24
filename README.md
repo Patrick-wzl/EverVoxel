@@ -15,7 +15,7 @@
 - 游戏是面向中国人的，要考虑中国人的审美
 - 方块要和我的世界的区分开来，防止版权纠纷
 
-这个宏大的游戏效果是未来的最终效果，这个项目就命名为：EverVoxel
+这个宏大的游戏效果是未来的最终效果
 
 
 
@@ -70,7 +70,7 @@ Both
 - 视角切换：已实现
 - 背包/装备栏/物品掉落：已实现
 - 方块坚硬度：已实现
-- 人物血条：
+- 人物血条：已实现
 - 第三人称视角：待讨论，待整改
 - 确定画风
 - 简单美术
@@ -2154,15 +2154,514 @@ Add Component > InventoryUI
 
 
 
+## 生命值
+
+在 `Assets/Scripts` 下新建 `PlayerStats.cs`
+
+```c#
+using System;
+using UnityEngine;
+
+// 人物基础属性系统
+// 负责：
+// 1. 保存当前生命值和生命上限
+// 2. 保存护甲值和魔抗值
+// 3. 提供受到伤害、恢复生命、提升生命上限的方法
+// 4. 通知UI刷新生命显示
+public class PlayerStats : MonoBehaviour
+{
+    [Header("生命值")]
+    // 人物初始生命上限
+    // 以后可以通过道具、天赋等调用 IncreaseMaxHealth 提升
+    [Min(1f)]
+    [SerializeField] private float maxHealth = 100f;
+
+    // 人物当前生命值
+    // 初始值为100，代表满血
+    [Min(0f)]
+    [SerializeField] private float currentHealth = 100f;
+
+    [Header("防御属性")]
+    // 当前护甲值
+    // 没有装备时为0
+    [Min(0f)]
+    [SerializeField] private float armor = 0f;
+
+    // 当前魔抗值
+    // 没有装备时为0
+    [Min(0f)]
+    [SerializeField] private float magicResistance = 0f;
+
+    [Header("测试")]
+    // 勾选后可以在运行时测试生命值变化
+    // 减号键：受到10点物理伤害
+    // 等号键：恢复10点生命
+    public bool enableDebugKeys;
+
+    // 外部只读当前生命上限
+    public float MaxHealth => maxHealth;
+
+    // 外部只读当前生命值
+    public float CurrentHealth => currentHealth;
+
+    // 外部只读当前护甲值
+    public float Armor => armor;
+
+    // 外部只读当前魔抗值
+    public float MagicResistance => magicResistance;
+
+    // 生命值改变事件
+    // 参数依次为：当前生命值、生命上限
+    // UI会监听这个事件，生命变化时自动刷新
+    public event Action<float, float> HealthChanged;
+
+    private void Awake()
+    {
+        // 防止Inspector里填写的当前生命超过生命上限
+        currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
+    }
+
+    private void Start()
+    {
+        // 游戏开始时通知UI显示初始生命
+        NotifyHealthChanged();
+    }
+
+    private void Update()
+    {
+        // 仅用于开发测试
+        // 正式游戏时不勾选 enableDebugKeys 即可
+        if (!enableDebugKeys)
+        {
+            return;
+        }
+
+        // 减号键：受到10点物理伤害
+        if (Input.GetKeyDown(KeyCode.Minus))
+        {
+            TakePhysicalDamage(10f);
+        }
+
+        // 等号键：恢复10点生命
+        if (Input.GetKeyDown(KeyCode.Equals))
+        {
+            RestoreHealth(10f);
+        }
+    }
+
+    // 受到物理伤害
+    // 例如近战怪物、箭矢、陷阱等伤害
+    public void TakePhysicalDamage(float rawDamage)
+    {
+        // 伤害不能小于0
+        if (rawDamage <= 0f)
+        {
+            return;
+        }
+
+        // 护甲减伤公式：
+        // 护甲为0时，受到100%伤害
+        // 护甲越高，伤害越低，但不会直接变成无敌
+        float finalDamage = CalculateReducedDamage(rawDamage, armor);
+
+        ChangeHealth(-finalDamage);
+    }
+
+    // 受到魔法伤害
+    // 例如法术、元素攻击、Boss技能等伤害
+    public void TakeMagicDamage(float rawDamage)
+    {
+        // 伤害不能小于0
+        if (rawDamage <= 0f)
+        {
+            return;
+        }
+
+        // 魔抗减伤公式与护甲相同
+        float finalDamage = CalculateReducedDamage(
+            rawDamage,
+            magicResistance
+        );
+
+        ChangeHealth(-finalDamage);
+    }
+
+    // 恢复生命
+    // 例如食物、药水、治疗技能等
+    public void RestoreHealth(float amount)
+    {
+        if (amount <= 0f)
+        {
+            return;
+        }
+
+        ChangeHealth(amount);
+    }
+
+    // 提升生命上限
+    // futureItemIncreaseHealth：未来道具可以调用此方法
+    // increaseCurrentHealthToo 为 true 时，提升上限的同时补充同等生命
+    public void IncreaseMaxHealth(
+        float amount,
+        bool increaseCurrentHealthToo = true)
+    {
+        if (amount <= 0f)
+        {
+            return;
+        }
+
+        maxHealth += amount;
+
+        if (increaseCurrentHealthToo)
+        {
+            currentHealth += amount;
+        }
+
+        // 防止当前生命超过新的上限
+        currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
+
+        NotifyHealthChanged();
+    }
+
+    // 设置护甲值
+    // 未来装备系统计算完总护甲后调用
+    public void SetArmor(float newArmor)
+    {
+        armor = Mathf.Max(0f, newArmor);
+    }
+
+    // 设置魔抗值
+    // 未来装备系统计算完总魔抗后调用
+    public void SetMagicResistance(float newMagicResistance)
+    {
+        magicResistance = Mathf.Max(0f, newMagicResistance);
+    }
+
+    // 改变生命值
+    // amount为正数时回血，为负数时扣血
+    private void ChangeHealth(float amount)
+    {
+        currentHealth = Mathf.Clamp(
+            currentHealth + amount,
+            0f,
+            maxHealth
+        );
+
+        NotifyHealthChanged();
+
+        // 当前生命值归零时触发死亡逻辑
+        if (currentHealth <= 0f)
+        {
+            Die();
+        }
+    }
+
+    // 根据防御值计算减伤后的伤害
+    private float CalculateReducedDamage(
+        float rawDamage,
+        float defense)
+    {
+        // 防御值为0时：
+        // finalDamage = rawDamage
+        //
+        // 防御值越高，伤害越低
+        // 例如100点防御时，伤害约减少50%
+        return rawDamage * 100f / (100f + defense);
+    }
+
+    // 通知所有监听生命值的系统刷新
+    private void NotifyHealthChanged()
+    {
+        HealthChanged?.Invoke(currentHealth, maxHealth);
+    }
+
+    // 人物死亡
+    // 现在只输出提示，之后可扩展重生、死亡界面、掉落物等功能
+    private void Die()
+    {
+        Debug.Log("人物生命值归零，人物死亡。");
+    }
+}
+```
+
+在 `Assets/Scripts` 下新建 `PlayerHealthUI.cs`
+
+```c#
+using UnityEngine;
+using UnityEngine.UI;
+
+// 人物心形生命UI
+// 负责：
+// 1. 自动创建左上角纯心形生命UI
+// 2. 自动生成原创心形精灵，不需要额外图片
+// 3. 根据当前生命值显示红色填充比例
+// 4. 不显示数字、文字、背景板和心形边框
+public class PlayerHealthUI : MonoBehaviour
+{
+    [Header("References")]
+    // 玩家的人物属性脚本
+    public PlayerStats playerStats;
+
+    [Header("UI设置")]
+    // 心形容器在屏幕上的大小
+    public float heartSize = 118f;
+
+    // 心形UI距离屏幕左上角的距离
+    public Vector2 screenOffset = new Vector2(34f, -34f);
+
+    // 未填满生命值时显示的暗红色
+    // 它不是边框，只用于表示生命上限容器
+    public Color emptyHealthColor = new Color(
+        0.22f,
+        0.035f,
+        0.045f,
+        0.8f
+    );
+
+    // 当前生命值显示的红色
+    public Color healthColor = new Color(
+        0.95f,
+        0.05f,
+        0.08f,
+        1f
+    );
+
+    // 红色生命填充图片
+    private Image healthFillImage;
+
+    // 自动生成的完整心形精灵
+    private Sprite heartSprite;
+
+    private void Start()
+    {
+        // 如果没有在Inspector手动拖入玩家属性脚本，则自动查找
+        if (playerStats == null)
+        {
+            playerStats = FindFirstObjectByType<PlayerStats>();
+        }
+
+        // 生成完整心形精灵
+        // 不再生成任何边框精灵
+        heartSprite = CreateHeartSprite();
+
+        // 创建生命UI
+        CreateHealthUI();
+
+        // 监听生命值变化
+        if (playerStats != null)
+        {
+            playerStats.HealthChanged += RefreshHealthUI;
+
+            // 初始刷新
+            RefreshHealthUI(
+                playerStats.CurrentHealth,
+                playerStats.MaxHealth
+            );
+        }
+    }
+
+    private void OnDestroy()
+    {
+        // 移除事件监听，避免对象销毁后仍然收到通知
+        if (playerStats != null)
+        {
+            playerStats.HealthChanged -= RefreshHealthUI;
+        }
+    }
+
+    // 创建完整的生命UI
+    private void CreateHealthUI()
+    {
+        // 创建根节点
+        GameObject root = CreateUIObject("HeartHealthUI", transform);
+
+        RectTransform rootRect = root.GetComponent<RectTransform>();
+
+        // 固定在屏幕左上角
+        rootRect.anchorMin = new Vector2(0f, 1f);
+        rootRect.anchorMax = new Vector2(0f, 1f);
+        rootRect.pivot = new Vector2(0f, 1f);
+        rootRect.anchoredPosition = screenOffset;
+        rootRect.sizeDelta = new Vector2(heartSize, heartSize);
+
+        // 创建完整的暗红色心形
+        // 用来表示人物的生命上限
+        Image emptyHeartImage = CreateHeartImage(
+            "EmptyHeart",
+            root.transform,
+            emptyHealthColor
+        );
+
+        Stretch(emptyHeartImage.rectTransform);
+
+        // 创建红色生命填充
+        // 红色会从下往上填充，不再有任何边框
+        healthFillImage = CreateHeartImage(
+            "HealthFill",
+            root.transform,
+            healthColor
+        );
+
+        Stretch(healthFillImage.rectTransform);
+
+        // 设置为从下往上填充
+        healthFillImage.type = Image.Type.Filled;
+        healthFillImage.fillMethod = Image.FillMethod.Vertical;
+        healthFillImage.fillOrigin = 0;
+        healthFillImage.fillAmount = 1f;
+    }
+
+    // 刷新生命显示
+    private void RefreshHealthUI(
+        float currentHealth,
+        float maxHealth)
+    {
+        if (healthFillImage == null)
+        {
+            return;
+        }
+
+        // 计算生命百分比
+        float healthPercent = maxHealth > 0f
+            ? currentHealth / maxHealth
+            : 0f;
+
+        // 设置红色填充比例
+        healthFillImage.fillAmount = Mathf.Clamp01(healthPercent);
+    }
+
+    // 创建一个心形Image
+    private Image CreateHeartImage(
+        string objectName,
+        Transform parent,
+        Color color)
+    {
+        GameObject imageObject = CreateUIObject(objectName, parent);
+
+        Image image = imageObject.AddComponent<Image>();
+        image.sprite = heartSprite;
+        image.color = color;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+
+        return image;
+    }
+
+    // 创建UI对象
+    private GameObject CreateUIObject(string objectName, Transform parent)
+    {
+        GameObject uiObject = new GameObject(
+            objectName,
+            typeof(RectTransform)
+        );
+
+        uiObject.transform.SetParent(parent, false);
+
+        return uiObject;
+    }
+
+    // 让UI填满父物体
+    private void Stretch(RectTransform rectTransform)
+    {
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+    }
+
+    // 创建原创心形精灵
+    // 只有完整心形，不生成边框
+    private Sprite CreateHeartSprite()
+    {
+        const int textureSize = 128;
+
+        Texture2D texture = new Texture2D(
+            textureSize,
+            textureSize,
+            TextureFormat.RGBA32,
+            false
+        );
+
+        // 使用双线性过滤，让心形边缘更平滑
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        Color32[] pixels = new Color32[textureSize * textureSize];
+
+        for (int y = 0; y < textureSize; y++)
+        {
+            for (int x = 0; x < textureSize; x++)
+            {
+                // 将像素坐标转换为心形数学公式使用的坐标
+                float normalizedX =
+                    x / (float)(textureSize - 1) * 2.4f - 1.2f;
+
+                float normalizedY =
+                    y / (float)(textureSize - 1) * 2.5f - 1.25f;
+
+                // 判断像素是否在完整心形内
+                bool isInsideHeart = IsInsideHeart(
+                    normalizedX,
+                    normalizedY
+                );
+
+                int index = y * textureSize + x;
+
+                // 白色区域会被Image组件的颜色染色
+                // 透明区域不会显示
+                pixels[index] = isInsideHeart
+                    ? new Color32(255, 255, 255, 255)
+                    : new Color32(255, 255, 255, 0);
+            }
+        }
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+
+        return Sprite.Create(
+            texture,
+            new Rect(0f, 0f, textureSize, textureSize),
+            new Vector2(0.5f, 0.5f),
+            textureSize
+        );
+    }
+
+    // 心形数学公式
+    // 返回true代表指定坐标位于心形区域内
+    private bool IsInsideHeart(float x, float y)
+    {
+        float value =
+            Mathf.Pow(x * x + y * y - 1f, 3f) -
+            x * x * y * y * y;
+
+        return value <= 0f;
+    }
+}
+```
+
+在 `Hierarchy` 选中 `Player`，点击 `Add Component`。搜索并添加 `Player Stats`
+
+
+
+在 `Hierarchy` 中选中现有的 `Canvas`，点击 `Add Component`。搜索并添加 `Player Health UI`
+
+将 `Hierarchy > Player` 拖入 `Player Health UI` 的 `Player Stats` 字段
+
+
+
+为了测试红色生命填充是否会变化：
+
+1. 选中 `Player`
+2. 勾选 `Player Stats > Enable Debug Keys`
+3. 运行游戏
+4. 按 `-`：受到 10 点物理伤害
+5. 按 `=`：恢复 10 点生命
+
+测试完后取消勾选 `Enable Debug Keys`
+
+
+
 # 当前需求
-
-实现人物血量，人物有100滴血，和我的世界地下城同款效果，一个心形容器，里面红色的是生命值
-
-人物有护甲值，默认为0
-
-人物有魔抗值，默认为0
-
-
 
 要详细的步骤告诉我怎么做，至少像我文档那样详细。最后给出可以直接复制的完整代码
 

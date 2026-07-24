@@ -421,6 +421,7 @@ GameObject:
   - component: {fileID: 564285870}
   - component: {fileID: 564285875}
   - component: {fileID: 564285876}
+  - component: {fileID: 564285877}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -647,6 +648,23 @@ MonoBehaviour:
   - block: {fileID: 0}
     amount: 0
   selectedHotbarIndex: 0
+--- !u!114 &564285877
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 564285869}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 827ad0c72244a6e41a9b6697f35be01f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerStats
+  maxHealth: 100
+  currentHealth: 100
+  armor: 0
+  magicResistance: 0
+  enableDebugKeys: 0
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -839,6 +857,7 @@ GameObject:
   - component: {fileID: 1753128073}
   - component: {fileID: 1753128072}
   - component: {fileID: 1753128076}
+  - component: {fileID: 1753128077}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -944,6 +963,23 @@ MonoBehaviour:
   playerInventory: {fileID: 564285876}
   cameraModeController: {fileID: 330585548}
   toggleKey: 98
+--- !u!114 &1753128077
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1753128071}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f6f619d58a4539546917a80d3145edd1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerHealthUI
+  playerStats: {fileID: 564285877}
+  heartSize: 118
+  screenOffset: {x: 34, y: -34}
+  emptyHealthColor: {r: 0.22, g: 0.035, b: 0.045, a: 0.8}
+  healthColor: {r: 0.86, g: 0.08, b: 0.08, a: 1}
 --- !u!1 &1858774222
 GameObject:
   m_ObjectHideFlags: 0
