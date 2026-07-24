@@ -602,12 +602,14 @@ Add Component > Character Controller
 设置 Character Controller：
 
 ```
+Skin Width：0.04
+
 Center X: 0
 Center Y: 0
 Center Z: 0
 
 Height: 2
-Radius: 0.5
+Radius: 0.4
 ```
 
 Capsule 自带的 Capsule Collider 可以删掉，因为我们用 `Character Controller`
@@ -770,7 +772,7 @@ Image Type选项下的Preserve Aspect：勾选
 
 
 
-选中场景里的 `Main Camera`。设置初始位置：
+选中场景里的 `Main Camera`。在`Transform`组件设置初始位置：
 
 ```
 Position X: 16
@@ -780,6 +782,12 @@ Position Z: 6
 Rotation X: 60
 Rotation Y: 0
 Rotation Z: 0
+```
+
+修改`Camera`组件为
+
+```
+Clipping Planes Near: 0.05
 ```
 
 
