@@ -3,15 +3,9 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // 背包UI系统
-// 1. 创建快捷栏
-// 2. 创建背包窗口
-// 3. 显示物品图标和数量
-// 4. 响应点击操作
-// 5. 控制背包打开关闭
 public class InventoryUI : MonoBehaviour
 {
     // UI中的一个物品格
-    // 保存这个格子的显示组件
     private class SlotView
     {
         // 物品图片
@@ -31,7 +25,6 @@ public class InventoryUI : MonoBehaviour
     [Header("References")]
     // 玩家背包数据
     public PlayerInventory playerInventory;
-    // 相机控制
     // 用于判断第一人称/第三人称状态
     public CameraModeController cameraModeController;
 
@@ -168,10 +161,6 @@ public class InventoryUI : MonoBehaviour
     }
 
     // 创建背包窗口
-    // 包含：
-    // 1. 标题
-    // 2. 关闭按钮
-    // 3. 27个背包格子
     private void CreateBackpack()
     {
         // 创建背包面板
@@ -273,11 +262,6 @@ public class InventoryUI : MonoBehaviour
     }
 
     // 创建一个物品格
-    // 包含：
-    // 1. 背景
-    // 2. 物品图标
-    // 3. 数量文字
-    // 4. 选中效果
     private SlotView CreateSlot(
         Transform parent,
         bool isHotbar,
@@ -346,9 +330,6 @@ public class InventoryUI : MonoBehaviour
     }
 
     // 创建按钮
-    // 用于：
-    // 1. 背包格子
-    // 2. 打开关闭按钮
     private GameObject CreateButton(Transform parent, string text)
     {
         // 创建按钮对象

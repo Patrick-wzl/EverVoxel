@@ -1,8 +1,7 @@
 using System;
 using UnityEngine;
 
-// 背包单个格子的数据
-// 保存：物品类型 + 数量
+// 背包单个格子的数据类
 [Serializable]
 public class InventorySlotData
 {
@@ -25,13 +24,7 @@ public class InventorySlotData
     }
 }
 
-// 玩家背包系统
-// 负责：
-// 1. 快捷栏
-// 2. 背包
-// 3. 物品添加
-// 4. 物品消耗
-// 5. 当前选择方块同步
+// 背包数据
 [RequireComponent(typeof(BlockInteraction))]
 public class PlayerInventory : MonoBehaviour
 {
@@ -217,8 +210,6 @@ public class PlayerInventory : MonoBehaviour
     }
 
     // 添加到已有物品格
-    // 例如：
-    // 石头格已有50个，再拾取20个 -> 变70个
     private int AddToExistingSlots(
         InventorySlotData[] slots,
         BlockDefinition blockDefinition,
