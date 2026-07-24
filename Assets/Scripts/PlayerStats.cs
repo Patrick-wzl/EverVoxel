@@ -2,7 +2,6 @@ using System;
 using UnityEngine;
 
 // 人物基础属性系统
-// 负责：
 // 1. 保存当前生命值和生命上限
 // 2. 保存护甲值和魔抗值
 // 3. 提供受到伤害、恢复生命、提升生命上限的方法
@@ -11,7 +10,6 @@ public class PlayerStats : MonoBehaviour
 {
     [Header("生命值")]
     // 人物初始生命上限
-    // 以后可以通过道具、天赋等调用 IncreaseMaxHealth 提升
     [Min(1f)]
     [SerializeField] private float maxHealth = 100f;
 
@@ -68,8 +66,12 @@ public class PlayerStats : MonoBehaviour
 
     private void Update()
     {
-        // 仅用于开发测试
-        // 正式游戏时不勾选 enableDebugKeys 即可
+        test();
+    }
+
+    // 仅用于开发测试
+    // 正式游戏时不勾选 enableDebugKeys 即可
+    private void test() {
         if (!enableDebugKeys)
         {
             return;
@@ -89,7 +91,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 受到物理伤害
-    // 例如近战怪物、箭矢、陷阱等伤害
     public void TakePhysicalDamage(float rawDamage)
     {
         // 伤害不能小于0
@@ -107,7 +108,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 受到魔法伤害
-    // 例如法术、元素攻击、Boss技能等伤害
     public void TakeMagicDamage(float rawDamage)
     {
         // 伤害不能小于0
@@ -126,7 +126,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 恢复生命
-    // 例如食物、药水、治疗技能等
     public void RestoreHealth(float amount)
     {
         if (amount <= 0f)
@@ -138,8 +137,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 提升生命上限
-    // futureItemIncreaseHealth：未来道具可以调用此方法
-    // increaseCurrentHealthToo 为 true 时，提升上限的同时补充同等生命
     public void IncreaseMaxHealth(
         float amount,
         bool increaseCurrentHealthToo = true)
@@ -163,14 +160,14 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 设置护甲值
-    // 未来装备系统计算完总护甲后调用
+    // 装备系统计算完总护甲后调用
     public void SetArmor(float newArmor)
     {
         armor = Mathf.Max(0f, newArmor);
     }
 
     // 设置魔抗值
-    // 未来装备系统计算完总魔抗后调用
+    // 装备系统计算完总魔抗后调用
     public void SetMagicResistance(float newMagicResistance)
     {
         magicResistance = Mathf.Max(0f, newMagicResistance);
@@ -215,7 +212,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 人物死亡
-    // 现在只输出提示，之后可扩展重生、死亡界面、掉落物等功能
     private void Die()
     {
         Debug.Log("人物生命值归零，人物死亡。");

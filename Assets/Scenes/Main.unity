@@ -664,7 +664,7 @@ MonoBehaviour:
   currentHealth: 100
   armor: 0
   magicResistance: 0
-  enableDebugKeys: 0
+  enableDebugKeys: 1
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

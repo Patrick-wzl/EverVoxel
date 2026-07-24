@@ -2,11 +2,6 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // 人物心形生命UI
-// 负责：
-// 1. 自动创建左上角纯心形生命UI
-// 2. 自动生成原创心形精灵，不需要额外图片
-// 3. 根据当前生命值显示红色填充比例
-// 4. 不显示数字、文字、背景板和心形边框
 public class PlayerHealthUI : MonoBehaviour
 {
     [Header("References")]
@@ -45,14 +40,11 @@ public class PlayerHealthUI : MonoBehaviour
 
     private void Start()
     {
-        // 如果没有在Inspector手动拖入玩家属性脚本，则自动查找
         if (playerStats == null)
         {
             playerStats = FindFirstObjectByType<PlayerStats>();
         }
 
-        // 生成完整心形精灵
-        // 不再生成任何边框精灵
         heartSprite = CreateHeartSprite();
 
         // 创建生命UI
@@ -180,8 +172,6 @@ public class PlayerHealthUI : MonoBehaviour
         rectTransform.offsetMax = Vector2.zero;
     }
 
-    // 创建原创心形精灵
-    // 只有完整心形，不生成边框
     private Sprite CreateHeartSprite()
     {
         const int textureSize = 128;

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-// 方块掉落
+// 方块掉落物挂载的脚本
 public class BlockDrop : MonoBehaviour
 {
     [Header("Drop Data")]
@@ -82,7 +82,7 @@ public class BlockDrop : MonoBehaviour
 
     private void Start()
     {
-        // 获取玩家背包
+        // 玩家背包
         playerInventory = FindFirstObjectByType<PlayerInventory>();
     }
 

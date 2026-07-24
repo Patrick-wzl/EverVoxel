@@ -357,6 +357,230 @@ StoneBlock  -> Stone Block
 
 
 
+## 方块掉落
+
+在 `Assets/Scripts` 新建 `BlockDrop.cs`
+
+```c#
+using UnityEngine;
+
+// 方块掉落物挂载的脚本
+public class BlockDrop : MonoBehaviour
+{
+    [Header("Drop Data")]
+    // 掉落物对应的方块
+    [SerializeField] private BlockDefinition definition;
+
+    [Header("Visual")]
+    // 掉落物大小
+    public float dropScale = 0.35f;
+    // 漂浮高度
+    public float floatingHeight = 0.08f;
+    // 漂浮速度
+    public float floatingSpeed = 2.5f;
+    // 旋转速度
+    public float rotationSpeed = 70f;
+
+    [Header("Fall")]
+    // 下落速度
+    public float fallSpeed = 5f;
+    // 地面检测误差
+    public float groundCheckPadding = 0.03f;
+
+    [Header("Pickup")]
+    // 自动拾取范围
+    public float pickupRange = 1.5f;
+    // 生成后多久可以拾取
+    public float pickupDelay = 0.35f;
+    // 是否已经落地
+    private bool hasLanded;
+    // 落地位置
+    private Vector3 restingPosition;
+    // 漂浮随机偏移
+    private float floatingOffset;
+    // 存活时间
+    private float aliveTime;
+    // 玩家背包
+    private PlayerInventory playerInventory;
+
+    public BlockDefinition Definition => definition;
+
+    // 初始化掉落物
+    public void Initialize(BlockDefinition blockDefinition)
+    {
+        definition = blockDefinition;
+
+        // 缩小显示
+        transform.localScale = Vector3.one * dropScale;
+
+        // 随机旋转
+        transform.rotation = Random.rotation;
+
+        // 随机漂浮相位
+        floatingOffset = Random.Range(0f, Mathf.PI * 2f);
+
+        // 设置材质
+        Renderer dropRenderer = GetComponent<Renderer>();
+
+        if (dropRenderer != null &&
+            definition != null &&
+            definition.material != null)
+        {
+            dropRenderer.sharedMaterial = definition.material;
+        }
+
+        // 掉落物关闭碰撞
+        Collider dropCollider = GetComponent<Collider>();
+
+        if (dropCollider != null)
+        {
+            dropCollider.enabled = false;
+        }
+
+        string blockName = definition != null
+            ? definition.displayName
+            : "未知方块";
+
+        gameObject.name = $"掉落物 - {blockName}";
+    }
+
+    private void Start()
+    {
+        // 玩家背包
+        playerInventory = FindFirstObjectByType<PlayerInventory>();
+    }
+
+    private void Update()
+    {
+        aliveTime += Time.deltaTime;
+
+        // 未落地：下落
+        if (!hasLanded)
+        {
+            FallToGround();
+            return;
+        }
+
+        // 落地后漂浮旋转
+        FloatAndRotate();
+
+        // 检测拾取
+        TryPickup();
+    }
+
+    // 掉落物下落
+    private void FallToGround()
+    {
+        float halfDropHeight = transform.localScale.y * 0.5f;
+        float fallDistance =
+            fallSpeed * Time.deltaTime +
+            halfDropHeight +
+            groundCheckPadding;
+
+        if (TryGetGroundBelow(fallDistance, out RaycastHit groundHit))
+        {
+            restingPosition = new Vector3(
+                transform.position.x,
+                groundHit.point.y + halfDropHeight,
+                transform.position.z
+            );
+
+            transform.position = restingPosition;
+            hasLanded = true;
+            return;
+        }
+
+        transform.position += Vector3.down * fallSpeed * Time.deltaTime;
+    }
+
+    // 检测下面的方块
+    private bool TryGetGroundBelow(
+        float checkDistance,
+        out RaycastHit closestGround)
+    {
+        closestGround = default;
+        float closestDistance = float.MaxValue;
+
+        RaycastHit[] hits = Physics.RaycastAll(
+            transform.position,
+            Vector3.down,
+            checkDistance
+        );
+
+        foreach (RaycastHit hit in hits)
+        {
+            Block block = hit.collider.GetComponent<Block>();
+
+            if (block == null)
+            {
+                continue;
+            }
+
+            if (hit.distance < closestDistance)
+            {
+                closestDistance = hit.distance;
+                closestGround = hit;
+            }
+        }
+
+        return closestDistance != float.MaxValue;
+    }
+
+    // 漂浮旋转
+    private void FloatAndRotate()
+    {
+        float floatingY = Mathf.Sin(
+            Time.time * floatingSpeed + floatingOffset
+        ) * floatingHeight;
+
+        transform.position = restingPosition + Vector3.up * floatingY;
+
+        transform.Rotate(
+            Vector3.up,
+            rotationSpeed * Time.deltaTime,
+            Space.World
+        );
+    }
+
+    // 自动拾取
+    private void TryPickup()
+    {
+        if (aliveTime < pickupDelay || definition == null)
+        {
+            return;
+        }
+
+        if (playerInventory == null)
+        {
+            playerInventory = FindFirstObjectByType<PlayerInventory>();
+
+            if (playerInventory == null)
+            {
+                return;
+            }
+        }
+
+        float distance = Vector3.Distance(
+            transform.position,
+            playerInventory.transform.position
+        );
+
+        if (distance > pickupRange)
+        {
+            return;
+        }
+
+        // 加入背包成功后删除掉落物
+        if (playerInventory.TryAddItem(definition, 1))
+        {
+            Destroy(gameObject);
+        }
+    }
+}
+```
+
+
+
 ## 角色
 
 在 Hierarchy 里：右键 > 3D Object > Capsule 命名 Player
@@ -1021,230 +1245,6 @@ public class BlockInteraction : MonoBehaviour
 2. 把 `World` 拖到 `World Root`字段
 4. 把 `Main Camera` 拖到  `Camera Mode Controller `字段
 4. 把 `Assets/Blocks/GrassBlock`拖到 `Place Block`字段
-
-
-
-## 方块掉落
-
-在 `Assets/Scripts` 新建 `BlockDrop.cs`
-
-```c#
-using UnityEngine;
-
-// 方块掉落
-public class BlockDrop : MonoBehaviour
-{
-    [Header("Drop Data")]
-    // 掉落物对应的方块
-    [SerializeField] private BlockDefinition definition;
-
-    [Header("Visual")]
-    // 掉落物大小
-    public float dropScale = 0.35f;
-    // 漂浮高度
-    public float floatingHeight = 0.08f;
-    // 漂浮速度
-    public float floatingSpeed = 2.5f;
-    // 旋转速度
-    public float rotationSpeed = 70f;
-
-    [Header("Fall")]
-    // 下落速度
-    public float fallSpeed = 5f;
-    // 地面检测误差
-    public float groundCheckPadding = 0.03f;
-
-    [Header("Pickup")]
-    // 自动拾取范围
-    public float pickupRange = 1.5f;
-    // 生成后多久可以拾取
-    public float pickupDelay = 0.35f;
-    // 是否已经落地
-    private bool hasLanded;
-    // 落地位置
-    private Vector3 restingPosition;
-    // 漂浮随机偏移
-    private float floatingOffset;
-    // 存活时间
-    private float aliveTime;
-    // 玩家背包
-    private PlayerInventory playerInventory;
-
-    public BlockDefinition Definition => definition;
-
-    // 初始化掉落物
-    public void Initialize(BlockDefinition blockDefinition)
-    {
-        definition = blockDefinition;
-
-        // 缩小显示
-        transform.localScale = Vector3.one * dropScale;
-
-        // 随机旋转
-        transform.rotation = Random.rotation;
-
-        // 随机漂浮相位
-        floatingOffset = Random.Range(0f, Mathf.PI * 2f);
-
-        // 设置材质
-        Renderer dropRenderer = GetComponent<Renderer>();
-
-        if (dropRenderer != null &&
-            definition != null &&
-            definition.material != null)
-        {
-            dropRenderer.sharedMaterial = definition.material;
-        }
-
-        // 掉落物关闭碰撞
-        Collider dropCollider = GetComponent<Collider>();
-
-        if (dropCollider != null)
-        {
-            dropCollider.enabled = false;
-        }
-
-        string blockName = definition != null
-            ? definition.displayName
-            : "未知方块";
-
-        gameObject.name = $"掉落物 - {blockName}";
-    }
-
-    private void Start()
-    {
-        // 获取玩家背包
-        playerInventory = FindFirstObjectByType<PlayerInventory>();
-    }
-
-    private void Update()
-    {
-        aliveTime += Time.deltaTime;
-
-        // 未落地：下落
-        if (!hasLanded)
-        {
-            FallToGround();
-            return;
-        }
-
-        // 落地后漂浮旋转
-        FloatAndRotate();
-
-        // 检测拾取
-        TryPickup();
-    }
-
-    // 掉落物下落
-    private void FallToGround()
-    {
-        float halfDropHeight = transform.localScale.y * 0.5f;
-        float fallDistance =
-            fallSpeed * Time.deltaTime +
-            halfDropHeight +
-            groundCheckPadding;
-
-        if (TryGetGroundBelow(fallDistance, out RaycastHit groundHit))
-        {
-            restingPosition = new Vector3(
-                transform.position.x,
-                groundHit.point.y + halfDropHeight,
-                transform.position.z
-            );
-
-            transform.position = restingPosition;
-            hasLanded = true;
-            return;
-        }
-
-        transform.position += Vector3.down * fallSpeed * Time.deltaTime;
-    }
-
-    // 检测下面的方块
-    private bool TryGetGroundBelow(
-        float checkDistance,
-        out RaycastHit closestGround)
-    {
-        closestGround = default;
-        float closestDistance = float.MaxValue;
-
-        RaycastHit[] hits = Physics.RaycastAll(
-            transform.position,
-            Vector3.down,
-            checkDistance
-        );
-
-        foreach (RaycastHit hit in hits)
-        {
-            Block block = hit.collider.GetComponent<Block>();
-
-            if (block == null)
-            {
-                continue;
-            }
-
-            if (hit.distance < closestDistance)
-            {
-                closestDistance = hit.distance;
-                closestGround = hit;
-            }
-        }
-
-        return closestDistance != float.MaxValue;
-    }
-
-    // 漂浮旋转
-    private void FloatAndRotate()
-    {
-        float floatingY = Mathf.Sin(
-            Time.time * floatingSpeed + floatingOffset
-        ) * floatingHeight;
-
-        transform.position = restingPosition + Vector3.up * floatingY;
-
-        transform.Rotate(
-            Vector3.up,
-            rotationSpeed * Time.deltaTime,
-            Space.World
-        );
-    }
-
-    // 自动拾取
-    private void TryPickup()
-    {
-        if (aliveTime < pickupDelay || definition == null)
-        {
-            return;
-        }
-
-        if (playerInventory == null)
-        {
-            playerInventory = FindFirstObjectByType<PlayerInventory>();
-
-            if (playerInventory == null)
-            {
-                return;
-            }
-        }
-
-        float distance = Vector3.Distance(
-            transform.position,
-            playerInventory.transform.position
-        );
-
-        if (distance > pickupRange)
-        {
-            return;
-        }
-
-        // 加入背包成功后删除掉落物
-        if (playerInventory.TryAddItem(definition, 1))
-        {
-            Destroy(gameObject);
-        }
-    }
-}
-```
 
 
 
@@ -2163,7 +2163,6 @@ using System;
 using UnityEngine;
 
 // 人物基础属性系统
-// 负责：
 // 1. 保存当前生命值和生命上限
 // 2. 保存护甲值和魔抗值
 // 3. 提供受到伤害、恢复生命、提升生命上限的方法
@@ -2172,7 +2171,6 @@ public class PlayerStats : MonoBehaviour
 {
     [Header("生命值")]
     // 人物初始生命上限
-    // 以后可以通过道具、天赋等调用 IncreaseMaxHealth 提升
     [Min(1f)]
     [SerializeField] private float maxHealth = 100f;
 
@@ -2229,8 +2227,12 @@ public class PlayerStats : MonoBehaviour
 
     private void Update()
     {
-        // 仅用于开发测试
-        // 正式游戏时不勾选 enableDebugKeys 即可
+        test();
+    }
+
+    // 仅用于开发测试
+    // 正式游戏时不勾选 enableDebugKeys 即可
+    private void test() {
         if (!enableDebugKeys)
         {
             return;
@@ -2250,7 +2252,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 受到物理伤害
-    // 例如近战怪物、箭矢、陷阱等伤害
     public void TakePhysicalDamage(float rawDamage)
     {
         // 伤害不能小于0
@@ -2268,7 +2269,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 受到魔法伤害
-    // 例如法术、元素攻击、Boss技能等伤害
     public void TakeMagicDamage(float rawDamage)
     {
         // 伤害不能小于0
@@ -2287,7 +2287,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 恢复生命
-    // 例如食物、药水、治疗技能等
     public void RestoreHealth(float amount)
     {
         if (amount <= 0f)
@@ -2299,8 +2298,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 提升生命上限
-    // futureItemIncreaseHealth：未来道具可以调用此方法
-    // increaseCurrentHealthToo 为 true 时，提升上限的同时补充同等生命
     public void IncreaseMaxHealth(
         float amount,
         bool increaseCurrentHealthToo = true)
@@ -2324,14 +2321,14 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 设置护甲值
-    // 未来装备系统计算完总护甲后调用
+    // 装备系统计算完总护甲后调用
     public void SetArmor(float newArmor)
     {
         armor = Mathf.Max(0f, newArmor);
     }
 
     // 设置魔抗值
-    // 未来装备系统计算完总魔抗后调用
+    // 装备系统计算完总魔抗后调用
     public void SetMagicResistance(float newMagicResistance)
     {
         magicResistance = Mathf.Max(0f, newMagicResistance);
@@ -2376,7 +2373,6 @@ public class PlayerStats : MonoBehaviour
     }
 
     // 人物死亡
-    // 现在只输出提示，之后可扩展重生、死亡界面、掉落物等功能
     private void Die()
     {
         Debug.Log("人物生命值归零，人物死亡。");
@@ -2391,11 +2387,6 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // 人物心形生命UI
-// 负责：
-// 1. 自动创建左上角纯心形生命UI
-// 2. 自动生成原创心形精灵，不需要额外图片
-// 3. 根据当前生命值显示红色填充比例
-// 4. 不显示数字、文字、背景板和心形边框
 public class PlayerHealthUI : MonoBehaviour
 {
     [Header("References")]
@@ -2434,14 +2425,11 @@ public class PlayerHealthUI : MonoBehaviour
 
     private void Start()
     {
-        // 如果没有在Inspector手动拖入玩家属性脚本，则自动查找
         if (playerStats == null)
         {
             playerStats = FindFirstObjectByType<PlayerStats>();
         }
 
-        // 生成完整心形精灵
-        // 不再生成任何边框精灵
         heartSprite = CreateHeartSprite();
 
         // 创建生命UI
@@ -2569,8 +2557,6 @@ public class PlayerHealthUI : MonoBehaviour
         rectTransform.offsetMax = Vector2.zero;
     }
 
-    // 创建原创心形精灵
-    // 只有完整心形，不生成边框
     private Sprite CreateHeartSprite()
     {
         const int textureSize = 128;
