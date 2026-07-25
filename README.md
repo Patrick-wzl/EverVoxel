@@ -110,7 +110,7 @@ Both
 
 角色在一片方块地形，wsad上下左右移动，空格跳跃，按v切换视角，放置破坏方块
 
-按数字键或点击物品栏切换物品，按B或点击...打开背包
+按数字键或点击物品栏切换物品，按B或点击...打开背包，人物血条
 
 ## 方块
 
@@ -626,6 +626,9 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 2f;
     public float gravity = -9.8f;   // 重力加速度，负数表示向下
 
+    // 第三人称人物转向速度
+    public float rotationSpeed = 10f;
+
     [Header("View")]
     public CameraModeController cameraModeController;
 
@@ -635,12 +638,12 @@ public class PlayerController : MonoBehaviour
 
     private void Awake()
     {
-        // 获取CharacterController
         controller = GetComponent<CharacterController>();
 
         if (cameraModeController == null)
         {
-            cameraModeController = Camera.main.GetComponent<CameraModeController>();
+            cameraModeController =
+                Camera.main.GetComponent<CameraModeController>();
         }
     }
 
@@ -660,7 +663,8 @@ public class PlayerController : MonoBehaviour
         Vector3 move;
 
         // 第一人称运动逻辑
-        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        if (cameraModeController != null &&
+            cameraModeController.IsFirstPerson)
         {
             Vector3 forward = transform.forward;
             Vector3 right = transform.right;
@@ -676,18 +680,37 @@ public class PlayerController : MonoBehaviour
         else   // 第三人称运动逻辑
         {
             move = new Vector3(horizontal, 0f, vertical);
+
+            // 玩家有移动输入时才旋转人物
+            if (move.sqrMagnitude > 0.01f)
+            {
+                // 计算人物应该面向的方向
+                Quaternion targetRotation =
+                    Quaternion.LookRotation(move);
+
+                // 让人物平滑转向移动方向
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    targetRotation,
+                    rotationSpeed * Time.deltaTime
+                );
+            }
         }
 
+        // 防止斜向移动速度更快
         move = Vector3.ClampMagnitude(move, 1f);
 
         // 跳跃逻辑
         if (canJump && Input.GetKeyDown(KeyCode.Space))
         {
-            // v2=v02​+2as
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            // v2=v02+2as
+            velocity.y =
+                Mathf.Sqrt(jumpHeight * -2f * gravity);
+
             canJump = false;
         }
 
+        // 应用重力
         velocity.y += gravity * Time.deltaTime;
 
         // 把水平移动和竖直移动合并成一个向量
@@ -963,7 +986,9 @@ public class CameraModeController : MonoBehaviour
 
 鼠标左键摧毁，鼠标右键放置：
 
-- 第三人称：范围是以角色为球心2个单元格半径
+- 第三人称：
+  - 破坏顺序：上上层 → 上层 → 地面
+  - 防止顺序：地面 → 上层 → 上上层
 - 第一人称：同MC
 
 
@@ -990,8 +1015,12 @@ public class BlockInteraction : MonoBehaviour
     [Header("Placement")]
     // 放置的方块
     public BlockDefinition placeBlock;
-    // 放置的范围
+    // 第一人称放置和破坏方块的范围
     public float interactRange = 5f;
+
+    [Header("Third Person")]
+    // 第三人称向下寻找人物脚下方块的距离
+    public float thirdPersonGroundCheckDistance = 2.5f;
 
     [Header("Breaking")]
     // 最终挖掘时间 = baseBreakTime * hardness
@@ -1011,7 +1040,8 @@ public class BlockInteraction : MonoBehaviour
             playerCamera = Camera.main;
         }
 
-        if (cameraModeController == null && playerCamera != null)
+        if (cameraModeController == null &&
+            playerCamera != null)
         {
             cameraModeController =
                 playerCamera.GetComponent<CameraModeController>();
@@ -1019,7 +1049,8 @@ public class BlockInteraction : MonoBehaviour
 
         if (worldRoot != null)
         {
-            voxelWorld = worldRoot.GetComponent<VoxelWorld>();
+            voxelWorld =
+                worldRoot.GetComponent<VoxelWorld>();
         }
 
         inventory = GetComponent<PlayerInventory>();
@@ -1042,15 +1073,17 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        // 左键挖掘方块
-        if (Input.GetMouseButtonDown(0))
-        {
-            BeginBreakingBlock();
-        }
-
-        // 持续挖掘
+        // 按住左键持续挖掘方块
         if (Input.GetMouseButton(0))
         {
+            // 当前没有正在挖掘的方块时
+            // 自动寻找新的目标方块
+            if (breakingBlock == null)
+            {
+                BeginBreakingBlock();
+            }
+
+            // 持续挖掘当前目标方块
             ContinueBreakingBlock();
         }
 
@@ -1061,36 +1094,61 @@ public class BlockInteraction : MonoBehaviour
         }
 
         // 右键放置方块
+        // 只有右键第一次按下时才放置
+        // 持续按住右键不会连续放置
         if (Input.GetMouseButtonDown(1))
         {
             TryPlaceBlock();
         }
     }
 
-    // 获取玩家当前瞄准的方块
+    // 获取玩家当前准备破坏的方块
     // 第一人称：从屏幕中心发射射线
-    // 第三人称：从鼠标位置发射射线
-    private bool TryGetTargetBlock(out RaycastHit hit)
+    // 第三人称：寻找人物身前的方块
+    private bool TryGetBreakingTarget(
+        out Block targetBlock)
     {
-        hit = default;
-
-        Ray ray;
+        targetBlock = null;
 
         if (cameraModeController != null &&
             cameraModeController.IsFirstPerson)
         {
-            ray = playerCamera.ScreenPointToRay(
-                new Vector3(
-                    Screen.width * 0.5f,
-                    Screen.height * 0.5f,
-                    0f
-                )
-            );
+            if (!TryGetFirstPersonTargetBlock(
+                out RaycastHit hit))
+            {
+                return false;
+            }
+
+            targetBlock =
+                hit.collider.GetComponent<Block>();
+
+            return targetBlock != null;
         }
-        else
+
+        return TryGetThirdPersonTargetBlock(
+            out targetBlock
+        );
+    }
+
+    // 获取第一人称当前瞄准的方块
+    // 从屏幕中心发射射线
+    private bool TryGetFirstPersonTargetBlock(
+        out RaycastHit hit)
+    {
+        hit = default;
+
+        if (playerCamera == null)
         {
-            ray = playerCamera.ScreenPointToRay(Input.mousePosition);
+            return false;
         }
+
+        Ray ray = playerCamera.ScreenPointToRay(
+            new Vector3(
+                Screen.width * 0.5f,
+                Screen.height * 0.5f,
+                0f
+            )
+        );
 
         if (!Physics.Raycast(ray, out hit, 100f))
         {
@@ -1098,7 +1156,8 @@ public class BlockInteraction : MonoBehaviour
         }
 
         // 只有带Block组件的对象才是真正方块
-        Block targetBlock = hit.collider.GetComponent<Block>();
+        Block targetBlock =
+            hit.collider.GetComponent<Block>();
 
         if (targetBlock == null)
         {
@@ -1106,8 +1165,7 @@ public class BlockInteraction : MonoBehaviour
         }
 
         // 只允许操作World下的方块
-        if (worldRoot != null &&
-            hit.collider.transform.parent != worldRoot)
+        if (!IsWorldBlock(targetBlock))
         {
             return false;
         }
@@ -1115,23 +1173,321 @@ public class BlockInteraction : MonoBehaviour
         // 检查玩家距离
         return Vector3.Distance(
             transform.position,
-            hit.collider.transform.position
+            targetBlock.transform.position
         ) <= interactRange;
     }
 
+    // 获取第三人称当前准备破坏的方块
+    // 优先寻找身前上上层方块
+    // 然后寻找身前上层方块
+    // 最后寻找身前地面方块
+    private bool TryGetThirdPersonTargetBlock(
+        out Block targetBlock)
+    {
+        targetBlock = null;
+
+        if (!TryGetThirdPersonGridPositions(
+            out Vector3Int frontGroundPosition,
+            out Vector3Int frontUpperPosition,
+            out Vector3Int frontTopPosition))
+        {
+            return false;
+        }
+
+        // 优先破坏人物身前上上层的方块
+        if (TryGetBlockAtGridPosition(
+            frontTopPosition,
+            out targetBlock))
+        {
+            return true;
+        }
+
+        // 身前上上层为空时
+        // 尝试破坏人物身前上层方块
+        if (TryGetBlockAtGridPosition(
+            frontUpperPosition,
+            out targetBlock))
+        {
+            return true;
+        }
+
+        // 身前上层为空时
+        // 尝试破坏人物身前地面方块
+        return TryGetBlockAtGridPosition(
+            frontGroundPosition,
+            out targetBlock
+        );
+    }
+
+    // 获取第三人称放置方块的位置
+    // 按照地面、上层、上上层的顺序寻找空位
+    private bool TryGetThirdPersonPlacePosition(
+        out Vector3Int placePosition)
+    {
+        placePosition = default;
+
+        if (!TryGetThirdPersonGridPositions(
+            out Vector3Int frontGroundPosition,
+            out Vector3Int frontUpperPosition,
+            out Vector3Int frontTopPosition))
+        {
+            return false;
+        }
+
+        // 检查人物身前地面是否存在方块
+        bool hasFrontGroundBlock =
+            TryGetBlockAtGridPosition(
+                frontGroundPosition,
+                out Block frontGroundBlock
+            );
+
+        // 身前地面为空
+        // 在地面位置放置方块，用于填坑或者铺路
+        if (!hasFrontGroundBlock)
+        {
+            placePosition = frontGroundPosition;
+            return true;
+        }
+
+        // 检查人物身前上层是否存在方块
+        bool hasFrontUpperBlock =
+            TryGetBlockAtGridPosition(
+                frontUpperPosition,
+                out Block frontUpperBlock
+            );
+
+        // 身前地面存在，上层为空
+        // 把方块放在身前上层
+        if (!hasFrontUpperBlock)
+        {
+            placePosition = frontUpperPosition;
+            return true;
+        }
+
+        // 检查人物身前上上层是否存在方块
+        bool hasFrontTopBlock =
+            TryGetBlockAtGridPosition(
+                frontTopPosition,
+                out Block frontTopBlock
+            );
+
+        // 身前地面和上层存在，上上层为空
+        // 把方块放在身前上上层
+        if (!hasFrontTopBlock)
+        {
+            placePosition = frontTopPosition;
+            return true;
+        }
+
+        // 身前地面、上层和上上层都有方块
+        // 当前没有可以放置方块的位置
+        return false;
+    }
+
+    // 计算第三人称人物身前的三个方块位置
+    private bool TryGetThirdPersonGridPositions(
+        out Vector3Int frontGroundPosition,
+        out Vector3Int frontUpperPosition,
+        out Vector3Int frontTopPosition)
+    {
+        frontGroundPosition = default;
+        frontUpperPosition = default;
+        frontTopPosition = default;
+
+        // 找到人物当前站立的方块
+        if (!TryGetStandingBlockPosition(
+            out Vector3Int standingBlockPosition))
+        {
+            return false;
+        }
+
+        // 把人物当前朝向转换成方块方向
+        Vector3Int facingDirection =
+            GetThirdPersonGridDirection();
+
+        // 人物脚下方块加上人物朝向
+        // 得到人物身前的地面方块位置
+        frontGroundPosition =
+            standingBlockPosition + facingDirection;
+
+        // 身前地面上方一格
+        frontUpperPosition =
+            frontGroundPosition + Vector3Int.up;
+
+        // 身前地面上方两格
+        frontTopPosition =
+            frontGroundPosition + Vector3Int.up * 2;
+
+        return true;
+    }
+
+    // 获取人物当前站立方块的位置
+    private bool TryGetStandingBlockPosition(
+        out Vector3Int standingBlockPosition)
+    {
+        standingBlockPosition = default;
+
+        // 从人物中心稍微上方开始
+        // 向下寻找人物脚下的方块
+        Vector3 rayOrigin =
+            transform.position + Vector3.up * 0.1f;
+
+        RaycastHit[] hits = Physics.RaycastAll(
+            rayOrigin,
+            Vector3.down,
+            thirdPersonGroundCheckDistance
+        );
+
+        Block closestBlock = null;
+        float closestDistance = float.MaxValue;
+
+        foreach (RaycastHit hit in hits)
+        {
+            // 只有带Block组件的对象才是真正方块
+            Block block =
+                hit.collider.GetComponent<Block>();
+
+            if (block == null ||
+                !IsWorldBlock(block))
+            {
+                continue;
+            }
+
+            // 保存距离人物最近的脚下方块
+            if (hit.distance < closestDistance)
+            {
+                closestDistance = hit.distance;
+                closestBlock = block;
+            }
+        }
+
+        if (closestBlock == null)
+        {
+            return false;
+        }
+
+        // 把脚下方块的位置转换为整数坐标
+        standingBlockPosition = new Vector3Int(
+            Mathf.RoundToInt(
+                closestBlock.transform.position.x
+            ),
+            Mathf.RoundToInt(
+                closestBlock.transform.position.y
+            ),
+            Mathf.RoundToInt(
+                closestBlock.transform.position.z
+            )
+        );
+
+        return true;
+    }
+
+    // 把人物当前朝向转换成八方向方块坐标
+    private Vector3Int GetThirdPersonGridDirection()
+    {
+        Vector3 forward = transform.forward;
+
+        // 第三人称只使用水平方向
+        forward.y = 0f;
+        forward.Normalize();
+
+        int directionX = 0;
+        int directionZ = 0;
+
+        // 0.382683约等于22.5度的正弦值
+        // 用它把人物朝向平均划分为八个方向
+        const float directionThreshold = 0.382683f;
+
+        if (Mathf.Abs(forward.x) >=
+            directionThreshold)
+        {
+            directionX =
+                forward.x > 0f ? 1 : -1;
+        }
+
+        if (Mathf.Abs(forward.z) >=
+            directionThreshold)
+        {
+            directionZ =
+                forward.z > 0f ? 1 : -1;
+        }
+
+        // 正常情况下至少会得到一个有效方向
+        // 如果没有得到方向，默认使用世界前方
+        if (directionX == 0 &&
+            directionZ == 0)
+        {
+            directionZ = 1;
+        }
+
+        return new Vector3Int(
+            directionX,
+            0,
+            directionZ
+        );
+    }
+
+    // 获取指定整数坐标上的方块
+    private bool TryGetBlockAtGridPosition(
+        Vector3Int gridPosition,
+        out Block targetBlock)
+    {
+        targetBlock = null;
+
+        // 检查这个格子范围内的所有碰撞体
+        Collider[] colliders = Physics.OverlapBox(
+            gridPosition,
+            Vector3.one * 0.45f
+        );
+
+        foreach (Collider blockCollider in colliders)
+        {
+            Block block =
+                blockCollider.GetComponent<Block>();
+
+            if (block == null ||
+                !IsWorldBlock(block))
+            {
+                continue;
+            }
+
+            targetBlock = block;
+            return true;
+        }
+
+        return false;
+    }
+
+    // 判断方块是否属于当前VoxelWorld
+    private bool IsWorldBlock(Block block)
+    {
+        if (block == null)
+        {
+            return false;
+        }
+
+        // 没有设置World Root时
+        // 接受所有带Block组件的方块
+        if (worldRoot == null)
+        {
+            return true;
+        }
+
+        return block.transform.parent == worldRoot;
+    }
+
     // 开始挖掘方块
-    // 左键第一次按下时调用
+    // 当前没有正在挖掘的方块时调用
     // 保存当前目标方块
     private void BeginBreakingBlock()
     {
         CancelBreakingBlock();
 
-        if (!TryGetTargetBlock(out RaycastHit hit))
+        if (!TryGetBreakingTarget(
+            out Block targetBlock))
         {
             return;
         }
-
-        Block targetBlock = hit.collider.GetComponent<Block>();
 
         if (targetBlock == null ||
             targetBlock.Definition == null ||
@@ -1142,6 +1498,7 @@ public class BlockInteraction : MonoBehaviour
 
         breakingBlock = targetBlock;
     }
+
     // 持续挖掘方块
     // 玩家需要持续看向同一个方块
     // 根据hardness判断是否达到破坏时间
@@ -1152,16 +1509,19 @@ public class BlockInteraction : MonoBehaviour
             return;
         }
 
-        if (!TryGetTargetBlock(out RaycastHit hit) ||
-            hit.collider.GetComponent<Block>() != breakingBlock)
+        if (!TryGetBreakingTarget(
+                out Block targetBlock) ||
+            targetBlock != breakingBlock)
         {
             CancelBreakingBlock();
             return;
         }
 
-        BlockDefinition definition = breakingBlock.Definition;
+        BlockDefinition definition =
+            breakingBlock.Definition;
 
-        if (definition == null || !definition.isBreakable)
+        if (definition == null ||
+            !definition.isBreakable)
         {
             CancelBreakingBlock();
             return;
@@ -1169,18 +1529,28 @@ public class BlockInteraction : MonoBehaviour
 
         // hardness越高，需要挖掘时间越长
         float breakTime =
-            baseBreakTime * Mathf.Max(0.05f, definition.hardness);
+            baseBreakTime *
+            Mathf.Max(
+                0.05f,
+                definition.hardness
+            );
 
         currentBreakTime += Time.deltaTime;
 
         if (currentBreakTime >= breakTime)
         {
-            Vector3 position = breakingBlock.transform.position;
+            Vector3 position =
+                breakingBlock.transform.position;
+
             // 生成掉落物
             if (voxelWorld != null)
             {
-                voxelWorld.SpawnBlockDrop(position, definition);
+                voxelWorld.SpawnBlockDrop(
+                    position,
+                    definition
+                );
             }
+
             // 删除原方块
             Destroy(breakingBlock.gameObject);
             CancelBreakingBlock();
@@ -1203,28 +1573,55 @@ public class BlockInteraction : MonoBehaviour
     // 消耗背包中的一个物品
     private void TryPlaceBlock()
     {
-        if (inventory != null && !inventory.HasSelectedItem())
+        if (inventory != null &&
+            !inventory.HasSelectedItem())
         {
             return;
         }
 
-        if (placeBlock == null || !TryGetTargetBlock(out RaycastHit hit))
+        if (placeBlock == null)
         {
             return;
         }
 
-        // 根据点击面的方向计算放置位置
-        Vector3 placePosition = hit.collider.transform.position + hit.normal;
+        Vector3Int gridPosition;
 
-        // 转换为整数坐标
-        Vector3Int gridPosition = new Vector3Int(
-            Mathf.RoundToInt(placePosition.x),
-            Mathf.RoundToInt(placePosition.y),
-            Mathf.RoundToInt(placePosition.z)
-        );
+        if (cameraModeController != null &&
+            cameraModeController.IsFirstPerson)
+        {
+            if (!TryGetFirstPersonTargetBlock(
+                out RaycastHit hit))
+            {
+                return;
+            }
+
+            // 根据点击面的方向计算放置位置
+            Vector3 placePosition =
+                hit.collider.transform.position +
+                hit.normal;
+
+            // 转换为整数坐标
+            gridPosition = new Vector3Int(
+                Mathf.RoundToInt(placePosition.x),
+                Mathf.RoundToInt(placePosition.y),
+                Mathf.RoundToInt(placePosition.z)
+            );
+        }
+        else
+        {
+            // 第三人称不使用鼠标位置选择目标
+            // 根据人物朝向计算身前放置位置
+            if (!TryGetThirdPersonPlacePosition(
+                out gridPosition))
+            {
+                return;
+            }
+        }
 
         // 防止方块重叠
-        if (Physics.CheckBox(gridPosition, Vector3.one * 0.45f))
+        if (Physics.CheckBox(
+            gridPosition,
+            Vector3.one * 0.45f))
         {
             return;
         }
@@ -1236,10 +1633,14 @@ public class BlockInteraction : MonoBehaviour
 
         // 创建方块
         GameObject createdBlock =
-            voxelWorld.CreateBlock(gridPosition, placeBlock);
+            voxelWorld.CreateBlock(
+                gridPosition,
+                placeBlock
+            );
 
         // 放置成功后消耗物品
-        if (createdBlock != null && inventory != null)
+        if (createdBlock != null &&
+            inventory != null)
         {
             inventory.ConsumeSelectedItem();
         }
