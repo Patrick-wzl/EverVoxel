@@ -72,7 +72,7 @@ Both
 - 方块坚硬度：已实现
 - 人物血条：已实现
 - 第三人称视角：已实现
-- 功能完善：第一人称离自己进的脚下的方块无法被破坏
+- 功能完善：已完善
 - 确定画风
 - 简单美术
 - 简单模型
@@ -1009,6 +1009,7 @@ public class PlayerController : MonoBehaviour
 
 1. 把 `PlayerController.cs` 拖到 `Player` 上
 2. 把 `Main Camera` 拖到 `PlayerController` 的 `Camera Mode Controller` 字段
+3. 右边 Inspector 最上方的 `Layer`，点击当前的 `Default`，改成 `Ignore Raycast`
 
 
 
@@ -1128,8 +1129,8 @@ public class CameraModeController : MonoBehaviour
     [Header("UI")]
     public GameObject crosshair;
     public float mouseSensitivity = 2.5f;   // 鼠标灵敏度
-    public float minPitch = -80f;   // 第一人称允许向上下看的最大角度
-    public float maxPitch = 80f;
+    public float minPitch = -90f;   // 第一人称允许向上下看的最大角度
+    public float maxPitch = 90f;
 
     // 人物负责左右旋转（yaw），相机继承人物的左右旋转，再额外负责上下旋转
     private float yaw;   // 角色左右旋转角度
