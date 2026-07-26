@@ -7,6 +7,9 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 2f;
     public float gravity = -9.8f;   // 重力加速度，负数表示向下
 
+    // 第三人称人物转向速度
+    public float rotationSpeed = 10f;
+
     [Header("View")]
     public CameraModeController cameraModeController;
 
@@ -16,12 +19,12 @@ public class PlayerController : MonoBehaviour
 
     private void Awake()
     {
-        // 获取CharacterController
         controller = GetComponent<CharacterController>();
 
         if (cameraModeController == null)
         {
-            cameraModeController = Camera.main.GetComponent<CameraModeController>();
+            cameraModeController =
+                Camera.main.GetComponent<CameraModeController>();
         }
     }
 
@@ -41,7 +44,8 @@ public class PlayerController : MonoBehaviour
         Vector3 move;
 
         // 第一人称运动逻辑
-        if (cameraModeController != null && cameraModeController.IsFirstPerson)
+        if (cameraModeController != null &&
+            cameraModeController.IsFirstPerson)
         {
             Vector3 forward = transform.forward;
             Vector3 right = transform.right;
@@ -57,18 +61,37 @@ public class PlayerController : MonoBehaviour
         else   // 第三人称运动逻辑
         {
             move = new Vector3(horizontal, 0f, vertical);
+
+            // 玩家有移动输入时才旋转人物
+            if (move.sqrMagnitude > 0.01f)
+            {
+                // 计算人物应该面向的方向
+                Quaternion targetRotation =
+                    Quaternion.LookRotation(move);
+
+                // 让人物平滑转向移动方向
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    targetRotation,
+                    rotationSpeed * Time.deltaTime
+                );
+            }
         }
 
+        // 防止斜向移动速度更快
         move = Vector3.ClampMagnitude(move, 1f);
 
         // 跳跃逻辑
         if (canJump && Input.GetKeyDown(KeyCode.Space))
         {
-            // v2=v02​+2as
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            // v2=v02+2as
+            velocity.y =
+                Mathf.Sqrt(jumpHeight * -2f * gravity);
+
             canJump = false;
         }
 
+        // 应用重力
         velocity.y += gravity * Time.deltaTime;
 
         // 把水平移动和竖直移动合并成一个向量

@@ -14,6 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BlockDefinition
   displayName: "\u8349\u65B9\u5757"
   material: {fileID: 2100000, guid: 549e4701153ce8b40b3eb2b8878bc11e, type: 2}
+  itemIcon: {fileID: 0}
   isSolid: 1
   isBreakable: 1
   hardness: 1
+  dropBlock: {fileID: 11400000, guid: b03c896bea7bdcf4eaaf2e60d49a4f41, type: 2}

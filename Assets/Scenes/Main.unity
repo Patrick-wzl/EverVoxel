@@ -277,8 +277,8 @@ MonoBehaviour:
   firstPersonOffset: {x: 0, y: 0.75, z: 0}
   crosshair: {fileID: 1858774222}
   mouseSensitivity: 2.5
-  minPitch: -80
-  maxPitch: 80
+  minPitch: -90
+  maxPitch: 90
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -422,7 +422,7 @@ GameObject:
   - component: {fileID: 564285875}
   - component: {fileID: 564285876}
   - component: {fileID: 564285877}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: Player
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -444,6 +444,7 @@ MonoBehaviour:
   moveSpeed: 4
   jumpHeight: 2
   gravity: -10
+  rotationSpeed: 10
   cameraModeController: {fileID: 330585548}
 --- !u!143 &564285871
 CharacterController:
@@ -463,13 +464,13 @@ CharacterController:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Height: 2
+  m_Height: 1.8
   m_Radius: 0.4
   m_SlopeLimit: 45
   m_StepOffset: 0.3
   m_SkinWidth: 0.04
   m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Center: {x: 0, y: -0.1, z: 0}
 --- !u!23 &564285872
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -557,8 +558,9 @@ MonoBehaviour:
   playerCamera: {fileID: 330585545}
   worldRoot: {fileID: 1041401693}
   cameraModeController: {fileID: 330585548}
-  placeBlock: {fileID: 11400000, guid: f2a3843014f98664483d922c61274423, type: 2}
+  placeBlock: {fileID: 0}
   interactRange: 5
+  thirdPersonGroundCheckDistance: 2.5
   baseBreakTime: 0.75
 --- !u!114 &564285876
 MonoBehaviour:

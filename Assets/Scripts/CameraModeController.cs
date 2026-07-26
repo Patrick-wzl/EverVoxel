@@ -25,8 +25,8 @@ public class CameraModeController : MonoBehaviour
     [Header("UI")]
     public GameObject crosshair;
     public float mouseSensitivity = 2.5f;   // 鼠标灵敏度
-    public float minPitch = -80f;   // 第一人称允许向上下看的最大角度
-    public float maxPitch = 80f;
+    public float minPitch = -90f;   // 第一人称允许向上下看的最大角度
+    public float maxPitch = 90f;
 
     // 人物负责左右旋转（yaw），相机继承人物的左右旋转，再额外负责上下旋转
     private float yaw;   // 角色左右旋转角度
