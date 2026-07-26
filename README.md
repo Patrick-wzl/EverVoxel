@@ -71,21 +71,23 @@ Both
 - 背包/装备栏/物品掉落：已实现
 - 方块坚硬度：已实现
 - 人物血条：已实现
-- 第三人称视角：方案设计更改，新方案实现中
+- 第三人称视角：已实现
+- 功能完善：第一人称离自己进的脚下的方块无法被破坏、泥土方块长草逻辑
 - 确定画风
 - 简单美术
-- 功能完善
+- 简单模型
+- 简单材质
 
 第二阶段（MC）：
 
 - chunk
-- 天气
-- 日夜交替
+- 无限地图
 - 各种方块
+- 日夜交替
+- 天气
 - 树/草
 - 简单生物
 - 僵尸
-- 无限地图
 - 模型设计
 - 美术
 - 存档
@@ -94,7 +96,7 @@ Both
 
 - 各种地对生物
 - 各种地形
-- 各种事件如鬼市【类似于血月】
+- 各种事件如血月
 - 少量剧情
 - npc
 
@@ -130,16 +132,19 @@ Stone.mat   灰色
 using UnityEngine;
 
 // CreateAssetMenu：可以在 Project 面板右键创建不同种类的方块资源
-[CreateAssetMenu(fileName = "New Block", menuName = "EverVoxel/Block Definition")]
+[CreateAssetMenu(
+    fileName = "New Block",
+    menuName = "EverVoxel/Block Definition")]
 public class BlockDefinition : ScriptableObject
 {
     [Header("Basic Info")]
     public string displayName = "新方块";
 
     [Header("Appearance")]
-    // 材质
+    // 方块在世界中使用的材质
     public Material material;
-    // 图标
+
+    // 方块在背包中显示的图标
     public Sprite itemIcon;
 
     [Header("Gameplay")]
@@ -151,6 +156,17 @@ public class BlockDefinition : ScriptableObject
 
     // 硬度
     public float hardness = 1f;
+
+    [Header("Drop")]
+    // 方块被破坏后实际掉落的方块类型
+    // 没有设置时默认掉落自己
+    public BlockDefinition dropBlock;
+
+    // 获取方块被破坏后实际掉落的类型
+    public BlockDefinition DropDefinition =>
+        dropBlock != null
+        ? dropBlock
+        : this;
 }
 ```
 
@@ -162,11 +178,11 @@ public class BlockDefinition : ScriptableObject
 
 创建三个资源并命名：GrassBlock、DirtBlock、StoneBlock。依次选中它们，在 Inspector 设置：
 
-| 方块资源   | Display Name | Material  | Hardness |
-| ---------- | ------------ | --------- | -------- |
-| GrassBlock | 草方块       | Grass.mat | 1        |
-| DirtBlock  | 泥土         | Dirt.mat  | 0.8      |
-| StoneBlock | 石头         | Stone.mat | 3        |
+| 方块资源   | Display Name | Material  | Hardness | Drop Block |
+| ---------- | ------------ | --------- | -------- | ---------- |
+| GrassBlock | 草方块       | Grass.mat | 1        | DirtBlock  |
+| DirtBlock  | 泥土         | Dirt.mat  | 0.8      | None       |
+| StoneBlock | 石头         | Stone.mat | 3        | None       |
 
 `Is Solid` 与 `Is Breakable` 都保持勾选
 
@@ -221,6 +237,173 @@ public class Block : MonoBehaviour
 
 
 
+Assets/Scripts 创建 GrassGrowth.cs
+
+```c#
+using System.Collections;
+using UnityEngine;
+
+[RequireComponent(typeof(Block))]
+public class GrassGrowth : MonoBehaviour
+{
+    [Header("Growth Time")]
+    // 泥土上方保持为空多久后变绿
+    public float growTime = 5f;
+
+    // 最短检查间隔
+    public float minCheckInterval = 0.8f;
+
+    // 最长检查间隔
+    public float maxCheckInterval = 1.2f;
+
+    private VoxelWorld voxelWorld;
+    private Block block;
+    private BlockDefinition dirtBlock;
+    private BlockDefinition grassBlock;
+
+    // 泥土上方已经保持为空的时间
+    private float uncoveredTime;
+
+    // 当前正在运行的检查协程
+    private Coroutine checkCoroutine;
+
+    // 初始化泥土长草系统
+    public void Initialize(
+        VoxelWorld world,
+        BlockDefinition dirtDefinition,
+        BlockDefinition grassDefinition)
+    {
+        voxelWorld = world;
+        dirtBlock = dirtDefinition;
+        grassBlock = grassDefinition;
+
+        block = GetComponent<Block>();
+
+        // 防止同一个方块重复启动检查协程
+        if (checkCoroutine != null)
+        {
+            StopCoroutine(checkCoroutine);
+        }
+
+        checkCoroutine =
+            StartCoroutine(CheckGrassState());
+    }
+
+    // 定期检查泥土上方是否存在方块
+    private IEnumerator CheckGrassState()
+    {
+        while (true)
+        {
+            // 每次使用略有差异的随机间隔
+            // 防止大量泥土在同一帧同时检查
+            float checkInterval = Random.Range(
+                minCheckInterval,
+                maxCheckInterval
+            );
+
+            yield return new WaitForSeconds(
+                checkInterval
+            );
+
+            if (voxelWorld == null ||
+                block == null ||
+                dirtBlock == null ||
+                grassBlock == null)
+            {
+                continue;
+            }
+
+            // 获取当前方块的整数坐标
+            Vector3Int currentPosition =
+                new Vector3Int(
+                    Mathf.RoundToInt(
+                        transform.position.x
+                    ),
+                    Mathf.RoundToInt(
+                        transform.position.y
+                    ),
+                    Mathf.RoundToInt(
+                        transform.position.z
+                    )
+                );
+
+            // 当前方块正上方一格
+            Vector3Int abovePosition =
+                currentPosition + Vector3Int.up;
+
+            // 检查正上方是否存在方块
+            bool hasBlockAbove =
+                voxelWorld.TryGetBlockAt(
+                    abovePosition,
+                    out Block blockAbove
+                );
+
+            // 当前是普通泥土
+            if (block.Definition == dirtBlock)
+            {
+                UpdateDirtState(
+                    hasBlockAbove,
+                    checkInterval
+                );
+            }
+            // 当前是绿色泥土
+            else if (block.Definition == grassBlock)
+            {
+                UpdateGrassState(hasBlockAbove);
+            }
+        }
+    }
+
+    // 更新普通泥土的长草状态
+    private void UpdateDirtState(
+        bool hasBlockAbove,
+        float checkInterval)
+    {
+        // 泥土上方存在方块
+        // 清空已经累计的长草时间
+        if (hasBlockAbove)
+        {
+            uncoveredTime = 0f;
+            return;
+        }
+
+        // 泥土上方为空
+        // 累计暴露在空气中的时间
+        uncoveredTime += checkInterval;
+
+        // 尚未达到长草时间
+        if (uncoveredTime < growTime)
+        {
+            return;
+        }
+
+        // 泥土变成绿色状态
+        block.Initialize(grassBlock);
+        uncoveredTime = 0f;
+    }
+
+    // 更新绿色泥土的状态
+    private void UpdateGrassState(
+        bool hasBlockAbove)
+    {
+        // 上方仍然为空时保持绿色
+        if (!hasBlockAbove)
+        {
+            return;
+        }
+
+        // 上方出现方块时
+        // 绿色泥土变回普通泥土
+        block.Initialize(dirtBlock);
+        uncoveredTime = 0f;
+    }
+}
+```
+
+
+
+
+
 ## 地形
 
 Assets/Scripts 创建 VoxelWorld.cs
@@ -239,8 +422,13 @@ public class VoxelWorld : MonoBehaviour
     public float noiseScale = 12f;
 
     [Header("Block Types")]
+    // 泥土的绿色世界状态
     public BlockDefinition grassBlock;
+
+    // 玩家能够获得和放置的泥土
     public BlockDefinition dirtBlock;
+
+    // 石头
     public BlockDefinition stoneBlock;
 
     private void Start()
@@ -254,28 +442,44 @@ public class VoxelWorld : MonoBehaviour
         {
             for (int z = 0; z < depth; z++)
             {
-                float noise = Mathf.PerlinNoise(x / noiseScale, z / noiseScale);
-                int height = Mathf.FloorToInt(noise * maxHeight) + 1;
+                float noise = Mathf.PerlinNoise(
+                    x / noiseScale,
+                    z / noiseScale
+                );
+
+                int height =
+                    Mathf.FloorToInt(
+                        noise * maxHeight
+                    ) + 1;
 
                 for (int y = 0; y < height; y++)
                 {
-                    CreateTerrainBlock(x, y, z, height);
+                    CreateTerrainBlock(
+                        x,
+                        y,
+                        z,
+                        height
+                    );
                 }
             }
         }
     }
 
     // 根据方块所在高度，决定它应该是什么种类
-    private void CreateTerrainBlock(int x, int y, int z, int columnHeight)
+    private void CreateTerrainBlock(
+        int x,
+        int y,
+        int z,
+        int columnHeight)
     {
         BlockDefinition blockToCreate;
 
-        // 最顶部生成草方块
+        // 最顶部生成绿色泥土
         if (y == columnHeight - 1)
         {
             blockToCreate = grassBlock;
         }
-        // 草方块下方两层生成泥土
+        // 绿色泥土下方两层生成普通泥土
         else if (y >= columnHeight - 3)
         {
             blockToCreate = dirtBlock;
@@ -286,56 +490,135 @@ public class VoxelWorld : MonoBehaviour
             blockToCreate = stoneBlock;
         }
 
-        CreateBlock(new Vector3Int(x, y, z), blockToCreate);
+        CreateBlock(
+            new Vector3Int(x, y, z),
+            blockToCreate
+        );
     }
 
     // 创建方块
-    public GameObject CreateBlock(Vector3Int blockPosition, BlockDefinition blockDefinition)
+    public GameObject CreateBlock(
+        Vector3Int blockPosition,
+        BlockDefinition blockDefinition)
     {
         if (blockDefinition == null)
         {
             return null;
         }
 
-        // 创建 Unity Cube【Cube 自带 Mesh Renderer 和 Box Collider】
-        GameObject blockObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        blockObject.transform.position = blockPosition;
+        // 创建 Unity Cube
+        // Cube自带Mesh Renderer和Box Collider
+        GameObject blockObject =
+            GameObject.CreatePrimitive(
+                PrimitiveType.Cube
+            );
 
-        // 所有方块都放到 World 下
-        blockObject.transform.parent = transform;
+        blockObject.transform.position =
+            blockPosition;
 
-        // 为该 Cube 添加 Block 组件，保存它的真实类型
-        Block block = blockObject.AddComponent<Block>();
+        // 所有方块都放到World下
+        blockObject.transform.parent =
+            transform;
 
-        // 把草、泥土、石头等定义写入这个方块
+        // 为该Cube添加Block组件
+        // 保存它的真实类型
+        Block block =
+            blockObject.AddComponent<Block>();
+
+        // 把方块定义写入这个方块
         block.Initialize(blockDefinition);
+
+        // 普通泥土和绿色泥土
+        // 都需要检测上方是否存在方块
+        if (blockDefinition == dirtBlock ||
+            blockDefinition == grassBlock)
+        {
+            GrassGrowth grassGrowth =
+                blockObject.AddComponent<GrassGrowth>();
+
+            grassGrowth.Initialize(
+                this,
+                dirtBlock,
+                grassBlock
+            );
+        }
 
         return blockObject;
     }
 
+    // 获取指定整数坐标上的方块
+    public bool TryGetBlockAt(
+        Vector3Int blockPosition,
+        out Block targetBlock)
+    {
+        targetBlock = null;
+
+        // 检查目标格子范围内的所有碰撞体
+        Collider[] colliders =
+            Physics.OverlapBox(
+                blockPosition,
+                Vector3.one * 0.45f
+            );
+
+        foreach (Collider blockCollider
+            in colliders)
+        {
+            Block block =
+                blockCollider.GetComponent<Block>();
+
+            if (block == null)
+            {
+                continue;
+            }
+
+            // 只接受当前World下的方块
+            if (block.transform.parent != transform)
+            {
+                continue;
+            }
+
+            targetBlock = block;
+            return true;
+        }
+
+        return false;
+    }
+
     // 创建方块掉落物
-    public GameObject SpawnBlockDrop(Vector3 worldPosition, BlockDefinition blockDefinition)
+    public GameObject SpawnBlockDrop(
+        Vector3 worldPosition,
+        BlockDefinition blockDefinition)
     {
         if (blockDefinition == null)
         {
             return null;
         }
 
-        GameObject dropObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        GameObject dropObject =
+            GameObject.CreatePrimitive(
+                PrimitiveType.Cube
+            );
 
-        // 让掉落物从被破坏方块稍微上方出现。
-        // X/Z 有轻微随机偏移，多个方块掉落时不会完全重叠。
+        // 让掉落物从被破坏方块稍微上方出现
+        // X/Z有轻微随机偏移
+        // 多个方块掉落时不会完全重叠
         Vector3 randomOffset = new Vector3(
             Random.Range(-0.18f, 0.18f),
             0.65f,
             Random.Range(-0.18f, 0.18f)
         );
 
-        dropObject.transform.position = worldPosition + randomOffset;
-        dropObject.transform.parent = transform;
+        dropObject.transform.position =
+            worldPosition + randomOffset;
 
-        // 掉落物不添加 Block 组件。因此玩家不能把掉落物再次当成世界方块挖掉。
-        BlockDrop blockDrop = dropObject.AddComponent<BlockDrop>();
+        dropObject.transform.parent =
+            transform;
+
+        // 掉落物不添加Block组件
+        // 因此不能把掉落物当成世界方块挖掉
+        BlockDrop blockDrop =
+            dropObject.AddComponent<BlockDrop>();
+
         blockDrop.Initialize(blockDefinition);
 
         return dropObject;
@@ -1640,12 +1923,15 @@ public class BlockInteraction : MonoBehaviour
             Vector3 position =
                 breakingBlock.transform.position;
 
+            // 获取方块被破坏后实际掉落的类型
+            // 例如绿色泥土被破坏后掉落普通泥土
+            BlockDefinition dropDefinition = definition.DropDefinition;
             // 生成掉落物
             if (voxelWorld != null)
             {
                 voxelWorld.SpawnBlockDrop(
                     position,
-                    definition
+                    dropDefinition
                 );
             }
 
@@ -1751,7 +2037,7 @@ public class BlockInteraction : MonoBehaviour
 1. 把 `Main Camera` 拖到 `Player Camera`字段
 2. 把 `World` 拖到 `World Root`字段
 4. 把 `Main Camera` 拖到  `Camera Mode Controller `字段
-4. 把 `Assets/Blocks/GrassBlock`拖到 `Place Block`字段
+4.  `Place Block`字段保持None
 
 
 

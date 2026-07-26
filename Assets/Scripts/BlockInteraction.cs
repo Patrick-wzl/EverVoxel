@@ -642,12 +642,15 @@ public class BlockInteraction : MonoBehaviour
             Vector3 position =
                 breakingBlock.transform.position;
 
+            // 获取方块被破坏后实际掉落的类型
+            // 例如绿色泥土被破坏后掉落普通泥土
+            BlockDefinition dropDefinition = definition.DropDefinition;
             // 生成掉落物
             if (voxelWorld != null)
             {
                 voxelWorld.SpawnBlockDrop(
                     position,
-                    definition
+                    dropDefinition
                 );
             }
 

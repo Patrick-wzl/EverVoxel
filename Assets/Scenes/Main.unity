@@ -558,7 +558,7 @@ MonoBehaviour:
   playerCamera: {fileID: 330585545}
   worldRoot: {fileID: 1041401693}
   cameraModeController: {fileID: 330585548}
-  placeBlock: {fileID: 11400000, guid: f2a3843014f98664483d922c61274423, type: 2}
+  placeBlock: {fileID: 0}
   interactRange: 5
   thirdPersonGroundCheckDistance: 2.5
   baseBreakTime: 0.75
