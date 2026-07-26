@@ -183,6 +183,48 @@ public class BlockInteraction : MonoBehaviour
     // 优先寻找身前上上层方块
     // 然后寻找身前上层方块
     // 最后寻找身前地面方块
+    // private bool TryGetThirdPersonTargetBlock(
+    //     out Block targetBlock)
+    // {
+    //     targetBlock = null;
+
+    //     if (!TryGetThirdPersonGridPositions(
+    //         out Vector3Int frontGroundPosition,
+    //         out Vector3Int frontUpperPosition,
+    //         out Vector3Int frontTopPosition))
+    //     {
+    //         return false;
+    //     }
+
+    //     // 优先破坏人物身前上上层的方块
+    //     if (TryGetBlockAtGridPosition(
+    //         frontTopPosition,
+    //         out targetBlock))
+    //     {
+    //         return true;
+    //     }
+
+    //     // 身前上上层为空时
+    //     // 尝试破坏人物身前上层方块
+    //     if (TryGetBlockAtGridPosition(
+    //         frontUpperPosition,
+    //         out targetBlock))
+    //     {
+    //         return true;
+    //     }
+
+    //     // 身前上层为空时
+    //     // 尝试破坏人物身前地面方块
+    //     return TryGetBlockAtGridPosition(
+    //         frontGroundPosition,
+    //         out targetBlock
+    //     );
+    // }
+
+    // 获取第三人称当前准备破坏的方块
+    // 优先寻找身前上上层方块
+    // 然后寻找身前上层方块
+    // 不允许破坏身前地面方块
     private bool TryGetThirdPersonTargetBlock(
         out Block targetBlock)
     {
@@ -206,23 +248,80 @@ public class BlockInteraction : MonoBehaviour
 
         // 身前上上层为空时
         // 尝试破坏人物身前上层方块
-        if (TryGetBlockAtGridPosition(
-            frontUpperPosition,
-            out targetBlock))
-        {
-            return true;
-        }
-
-        // 身前上层为空时
-        // 尝试破坏人物身前地面方块
         return TryGetBlockAtGridPosition(
-            frontGroundPosition,
+            frontUpperPosition,
             out targetBlock
         );
     }
 
     // 获取第三人称放置方块的位置
     // 按照地面、上层、上上层的顺序寻找空位
+    // private bool TryGetThirdPersonPlacePosition(
+    //     out Vector3Int placePosition)
+    // {
+    //     placePosition = default;
+
+    //     if (!TryGetThirdPersonGridPositions(
+    //         out Vector3Int frontGroundPosition,
+    //         out Vector3Int frontUpperPosition,
+    //         out Vector3Int frontTopPosition))
+    //     {
+    //         return false;
+    //     }
+
+    //     // 检查人物身前地面是否存在方块
+    //     bool hasFrontGroundBlock =
+    //         TryGetBlockAtGridPosition(
+    //             frontGroundPosition,
+    //             out Block frontGroundBlock
+    //         );
+
+    //     // 身前地面为空
+    //     // 在地面位置放置方块，用于填坑或者铺路
+    //     if (!hasFrontGroundBlock)
+    //     {
+    //         placePosition = frontGroundPosition;
+    //         return true;
+    //     }
+
+    //     // 检查人物身前上层是否存在方块
+    //     bool hasFrontUpperBlock =
+    //         TryGetBlockAtGridPosition(
+    //             frontUpperPosition,
+    //             out Block frontUpperBlock
+    //         );
+
+    //     // 身前地面存在，上层为空
+    //     // 把方块放在身前上层
+    //     if (!hasFrontUpperBlock)
+    //     {
+    //         placePosition = frontUpperPosition;
+    //         return true;
+    //     }
+
+    //     // 检查人物身前上上层是否存在方块
+    //     bool hasFrontTopBlock =
+    //         TryGetBlockAtGridPosition(
+    //             frontTopPosition,
+    //             out Block frontTopBlock
+    //         );
+
+    //     // 身前地面和上层存在，上上层为空
+    //     // 把方块放在身前上上层
+    //     if (!hasFrontTopBlock)
+    //     {
+    //         placePosition = frontTopPosition;
+    //         return true;
+    //     }
+
+    //     // 身前地面、上层和上上层都有方块
+    //     // 当前没有可以放置方块的位置
+    //     return false;
+    // }
+
+    // 获取第三人称放置方块的位置
+    // 按照上层、上上层的顺序寻找空位
+    // 身前地面必须存在，防止生成悬空方块
     private bool TryGetThirdPersonPlacePosition(
         out Vector3Int placePosition)
     {
@@ -243,12 +342,11 @@ public class BlockInteraction : MonoBehaviour
                 out Block frontGroundBlock
             );
 
-        // 身前地面为空
-        // 在地面位置放置方块，用于填坑或者铺路
+        // 身前没有地面时禁止放置
+        // 防止方块悬空，也不允许第三人称填坑
         if (!hasFrontGroundBlock)
         {
-            placePosition = frontGroundPosition;
-            return true;
+            return false;
         }
 
         // 检查人物身前上层是否存在方块
@@ -258,8 +356,8 @@ public class BlockInteraction : MonoBehaviour
                 out Block frontUpperBlock
             );
 
-        // 身前地面存在，上层为空
-        // 把方块放在身前上层
+        // 身前上层为空
+        // 优先把方块放在身前上层
         if (!hasFrontUpperBlock)
         {
             placePosition = frontUpperPosition;
@@ -273,7 +371,7 @@ public class BlockInteraction : MonoBehaviour
                 out Block frontTopBlock
             );
 
-        // 身前地面和上层存在，上上层为空
+        // 身前上层存在，上上层为空
         // 把方块放在身前上上层
         if (!hasFrontTopBlock)
         {
@@ -281,7 +379,7 @@ public class BlockInteraction : MonoBehaviour
             return true;
         }
 
-        // 身前地面、上层和上上层都有方块
+        // 身前上层和上上层都有方块
         // 当前没有可以放置方块的位置
         return false;
     }
