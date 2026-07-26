@@ -243,6 +243,8 @@ Assets/Scripts 创建 GrassGrowth.cs
 using System.Collections;
 using UnityEngine;
 
+// 挂载 GrassGrowth 组件的 GameObject，必须同时拥有 Block 组件
+// 给某个 GameObject 添加 GrassGrowth 时，如果它还没有 Block，Unity 会自动添加
 [RequireComponent(typeof(Block))]
 public class GrassGrowth : MonoBehaviour
 {
